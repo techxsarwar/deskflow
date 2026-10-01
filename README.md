@@ -1,119 +1,99 @@
-# Shadcn Admin Dashboard
+# DeskFlow 🪑📚
 
-Admin Dashboard UI crafted with Shadcn and Vite. Built with responsiveness and accessibility in mind.
+> **Modern Study Lounge & Library Management Operating System** built with React, Vite, TailwindCSS, Shadcn UI, and Supabase.
 
-![alt text](public/images/shadcn-admin.png)
+DeskFlow is a comprehensive management platform designed specifically for study lounges, reading rooms, and co-working libraries. It replaces manual registers and fragmented spreadsheets with visual seat management, automated membership lifecycles, and WhatsApp communication tools.
 
-[![Sponsored by Clerk](https://img.shields.io/badge/Sponsored%20by-Clerk-5b6ee1?logo=clerk)](https://go.clerk.com/GttUAaK)
+---
 
-I've been creating dashboard UIs at work and for my personal projects. I always wanted to make a reusable collection of dashboard UI for future projects; and here it is now. While I've created a few custom components, some of the code is directly adapted from ShadcnUI examples.
+## ✨ Key Features
 
-> This is not a starter project (template) though. I'll probably make one in the future.
+### 🪑 Visual Seating Chart & Allocation
+- **Interactive Floor Plan:** Color-coded floor plan divided into zones (*Silent Reading Hall*, *Flexi Open Zone*, *Private Executive Cabins*).
+- **Dedicated 24/7 Desks:** Every seat is strictly dedicated to the paying student with real-time occupancy indicators.
+- **1-Click Seat Assignment & Reallocation:** Assign unassigned students or vacate desks with one click.
+- **WhatsApp Seating Arrangement Sharing:** Generate and share complete room-by-room seating rosters directly to student community groups.
 
-## Features
+### 📅 Membership Lifecycle & Overdue Auto-Release
+- **Smart Lifecycle Tracking:**
+  - 🟢 **Active:** Normal ongoing membership with countdown of days left.
+  - 🟡 **Expiring Soon:** Highlighted 3 days prior to expiration.
+  - 🟠 **Grace Period:** 0–2 days post-expiry protection while staff follows up.
+  - 🔴 **Overdue / Expired:** Desks held past grace period flagged on floor plan.
+- **1-Click Auto-Release Desks:** Batch or individually vacate overdue seats so paying students can be allotted desks immediately.
 
-- Light/dark mode
-- Responsive
-- Accessible
-- With built-in Sidebar component
-- Global search command
-- 10+ pages
-- Extra custom components
-- RTL support
+### 🔄 Rolling Monthly Renewals
+- **1-Click Extend (+1, +2, +3 Months):** Automatically calculates the next renewal date preserving the student's rolling billing cycle (e.g. 15th to 15th).
+- **Instant Payment Logging:** Records partial or full renewal fees, updates balances, and logs timestamped ledger transactions.
+- **WhatsApp Renewal Pass:** Automatically generates an official renewal confirmation pass with valid-till dates and sends it to the student.
 
-<details>
-<summary>Customized Components (click to expand)</summary>
+### 💳 Ultra-Detailed Fee Collection & PDF Receipts
+- **Timestamped Ledger:** Tracks every payment mode (Cash, UPI, Card, Net Banking).
+- **Instant Receipts:** Generates downloadable & printable professional fee receipts.
+- **Editable Custom Text:** Edit notes or instructions before forwarding.
+- **WhatsApp Receipt Forwarding:** One-click redirect to send pre-formatted receipts directly to the student's WhatsApp number.
 
-This project uses Shadcn UI components, but some have been slightly modified for better RTL (Right-to-Left) support and other improvements. These customized components differ from the original Shadcn UI versions.
+### 📢 Dues & Defaulter Follow-ups
+- **Outstanding Balances Filter:** Instantly view students with overdue payments.
+- **Community Broadcast Reminders:** Pre-formats professional announcement messages ready to copy or share directly into WhatsApp announcement groups.
 
-If you want to update components using the Shadcn CLI (e.g., `npx shadcn@latest add <component>`), it's generally safe for non-customized components. For the listed customized ones, you may need to manually merge changes to preserve the project's modifications and avoid overwriting RTL support or other updates.
+### 🌐 Public Self-Registration (`/join`)
+- **Self-Service Onboarding:** Clean mobile-friendly portal where prospective students select their plan, preferred desk, and upload their photo.
+- **Admin Verification Queue:** New submissions appear in an online admissions queue where staff can verify documents and collect fees before granting permanent desk access.
+- **Supabase Cloud Storage:** Student profile photos are securely stored in Supabase Storage.
 
-> If you don't require RTL support, you can safely update the 'RTL Updated Components' via the Shadcn CLI, as these changes are primarily for RTL compatibility. The 'Modified Components' may have other customizations to consider.
+---
 
-### Modified Components
+## 🛠 Tech Stack
 
-- scroll-area
-- sonner
-- separator
+- **Frontend:** React 19, TypeScript, Vite, TailwindCSS
+- **UI Components:** Shadcn UI, Radix Primitives, Lucide Icons
+- **State Management:** Zustand with LocalStorage fallback & Supabase sync
+- **Routing:** TanStack Router
+- **Cloud Backend:** Supabase (PostgreSQL Database & S3-compatible Storage)
+- **Go Backend (Optional):** Go 1.24 API server for local SQLite/PostgreSQL sync
 
-### RTL Updated Components
+---
 
-- alert-dialog
-- calendar
-- command
-- dialog
-- dropdown-menu
-- select
-- table
-- sheet
-- sidebar
-- switch
+## 🚀 Getting Started
 
-**Notes:**
+### Prerequisites
+- Node.js 18+
+- pnpm (or npm / yarn)
 
-- **Modified Components**: These have general updates, potentially including RTL adjustments.
-- **RTL Updated Components**: These have specific changes for RTL language support (e.g., layout, positioning).
-- For implementation details, check the source files in `src/components/ui/`.
-- All other Shadcn UI components in the project are standard and can be safely updated via the CLI.
+### Installation
 
-</details>
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/techxsarwar/deskflow.git
+   cd deskflow
+   ```
 
-## Tech Stack
+2. **Install dependencies:**
+   ```bash
+   pnpm install
+   ```
 
-**UI:** [ShadcnUI](https://ui.shadcn.com) (TailwindCSS + RadixUI)
+3. **Configure Environment Variables:**
+   Copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+   Add your Supabase credentials:
+   ```env
+   VITE_SUPABASE_URL=https://your-project.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-key
+   VITE_API_URL=http://localhost:8080
+   ```
 
-**Build Tool:** [Vite](https://vitejs.dev/)
+4. **Run the Development Server:**
+   ```bash
+   pnpm run dev
+   ```
+   Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-**Routing:** [TanStack Router](https://tanstack.com/router/latest)
+---
 
-**Type Checking:** [TypeScript](https://www.typescriptlang.org/)
+## 📄 License
 
-**Linting/Formatting:** [ESLint](https://eslint.org/) & [Prettier](https://prettier.io/)
-
-**Icons:** [Lucide Icons](https://lucide.dev/icons/), [Tabler Icons](https://tabler.io/icons) (Brand icons only)
-
-**Auth (partial):** [Clerk](https://go.clerk.com/GttUAaK)
-
-## Run Locally
-
-Clone the project
-
-```bash
-  git clone https://github.com/satnaing/shadcn-admin.git
-```
-
-Go to the project directory
-
-```bash
-  cd shadcn-admin
-```
-
-Install dependencies
-
-```bash
-  pnpm install
-```
-
-Start the server
-
-```bash
-  pnpm run dev
-```
-
-## Sponsoring this project ❤️
-
-If you find this project helpful or use this in your own work, consider [sponsoring me](https://github.com/sponsors/satnaing) to support development and maintenance. You can [buy me a coffee](https://buymeacoffee.com/satnaing) as well. Don’t worry, every penny helps. Thank you! 🙏
-
-For questions or sponsorship inquiries, feel free to reach out at [satnaingdev@gmail.com](mailto:satnaingdev@gmail.com).
-
-### Current Sponsor
-
-- [Clerk](https://go.clerk.com/GttUAaK) - authentication and user management for the modern web
-
-## Author
-
-Crafted with 🤍 by [@satnaing](https://github.com/satnaing)
-
-## License
-
-Licensed under the [MIT License](https://choosealicense.com/licenses/mit/)
+This project is licensed under the MIT License.
