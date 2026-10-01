@@ -96,4 +96,6 @@ DeskFlow is a comprehensive management platform designed specifically for study 
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+Copyright © 2026 Sarwar Altaf Dar ([techxsarwar](https://github.com/techxsarwar)). **All Rights Reserved**.
+
+This software and associated documentation files are proprietary and confidential. Unauthorized copying, modification, distribution, or use of this codebase, via any medium, is strictly prohibited without the express written permission of the copyright holder.

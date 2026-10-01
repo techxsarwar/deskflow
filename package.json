@@ -1,7 +1,8 @@
 {
-  "name": "shadcn-admin",
-  "private": false,
-  "version": "2.2.1",
+  "name": "deskflow",
+  "private": true,
+  "license": "UNLICENSED",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
