@@ -10,7 +10,6 @@ import {
   Armchair,
   CheckCircle2,
   Clock,
-  Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -30,7 +29,6 @@ import { useStudyLoungeStore } from '../store/study-lounge-store'
 import {
   buildIndividualDueReminderMessage,
   getWhatsAppShareUrl,
-  cleanWhatsAppPhone,
 } from '../lib/receipt-utils'
 import { BroadcastDueDialog } from './broadcast-due-dialog'
 import { CollectFeeDialog } from './collect-fee-dialog'
@@ -126,7 +124,7 @@ export function DefaultersManagement() {
   return (
     <div className='space-y-4'>
       {/* Top Metric Cards */}
-      <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
+      <div className='grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-4 gap-3'>
         <Card>
           <CardContent className='p-4'>
             <div className='flex items-center justify-between text-muted-foreground'>
@@ -212,12 +210,12 @@ export function DefaultersManagement() {
             </div>
 
             {/* Broadcast Button */}
-            <div className='flex flex-wrap items-center gap-2'>
+            <div className='flex flex-col min-[480px]:flex-row flex-wrap items-stretch sm:items-center gap-2 w-full lg:w-auto'>
               <Button
                 variant='outline'
                 size='sm'
                 onClick={handleSelectAll}
-                className='text-xs h-9'
+                className='text-xs h-9 flex-1 sm:flex-initial'
               >
                 {selectedIds.length === filteredUnpaidStudents.length && filteredUnpaidStudents.length > 0 ? (
                   <>
@@ -234,7 +232,7 @@ export function DefaultersManagement() {
 
               <Button
                 size='sm'
-                className='gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white font-semibold shadow-xs h-9'
+                className='gap-2 bg-[#25D366] hover:bg-[#20bd5a] text-white font-semibold shadow-xs h-9 flex-1 sm:flex-initial'
                 disabled={selectedStudents.length === 0}
                 onClick={() => setBroadcastOpen(true)}
               >
@@ -290,7 +288,7 @@ export function DefaultersManagement() {
               <table className='w-full text-sm text-left'>
                 <thead className='bg-muted/60 border-b text-xs uppercase text-muted-foreground'>
                   <tr>
-                    <th className='py-3 px-3 w-10 text-center'>
+                    <th className='py-3 px-3 w-10 text-center whitespace-nowrap'>
                       <input
                         type='checkbox'
                         checked={
@@ -301,13 +299,13 @@ export function DefaultersManagement() {
                         className='h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary'
                       />
                     </th>
-                    <th className='py-3 px-3'>Student Profile</th>
-                    <th className='py-3 px-3'>Desk & Shift</th>
-                    <th className='py-3 px-3'>Plan & Total Fee</th>
-                    <th className='py-3 px-3'>Paid to Date</th>
-                    <th className='py-3 px-3'>Outstanding Due</th>
-                    <th className='py-3 px-3'>Status</th>
-                    <th className='py-3 px-3 text-right'>Action</th>
+                    <th className='py-3 px-3 min-w-[170px] whitespace-nowrap'>Student Profile</th>
+                    <th className='py-3 px-3 min-w-[130px] whitespace-nowrap'>Desk & Shift</th>
+                    <th className='py-3 px-3 min-w-[120px] whitespace-nowrap'>Plan & Total Fee</th>
+                    <th className='py-3 px-3 min-w-[100px] whitespace-nowrap'>Paid to Date</th>
+                    <th className='py-3 px-3 min-w-[120px] whitespace-nowrap'>Outstanding Due</th>
+                    <th className='py-3 px-3 min-w-[90px] whitespace-nowrap'>Status</th>
+                    <th className='py-3 px-3 min-w-[130px] text-right whitespace-nowrap'>Action</th>
                   </tr>
                 </thead>
                 <tbody className='divide-y'>

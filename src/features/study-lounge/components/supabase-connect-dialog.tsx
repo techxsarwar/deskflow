@@ -16,7 +16,6 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -208,23 +207,30 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.seats;`
         <Button
           variant='outline'
           size='sm'
-          className={`h-8 gap-1.5 font-medium text-xs rounded-full border transition-all ${
+          className={`h-8 gap-1.5 font-medium text-xs rounded-full border transition-all shrink-0 max-sm:px-2.5 ${
             isConnected
               ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20'
               : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20'
           }`}
+          title={isConnected ? 'Supabase Connected' : 'Connect Supabase'}
         >
-          <Database className='h-3.5 w-3.5' />
+          <Database className='h-3.5 w-3.5 shrink-0' />
           {isConnected ? (
-            <span className='flex items-center gap-1.5'>
-              <span className='h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse' />
-              Supabase Connected
-            </span>
+            <>
+              <span className='hidden sm:inline-flex items-center gap-1.5'>
+                <span className='h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse' />
+                Supabase Connected
+              </span>
+              <span className='sm:hidden h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse' />
+            </>
           ) : (
-            <span className='flex items-center gap-1.5'>
-              <span className='h-1.5 w-1.5 rounded-full bg-amber-500' />
-              Connect Supabase
-            </span>
+            <>
+              <span className='hidden sm:inline-flex items-center gap-1.5'>
+                <span className='h-1.5 w-1.5 rounded-full bg-amber-500' />
+                Connect Supabase
+              </span>
+              <span className='sm:hidden h-1.5 w-1.5 rounded-full bg-amber-500' />
+            </>
           )}
         </Button>
       </DialogTrigger>

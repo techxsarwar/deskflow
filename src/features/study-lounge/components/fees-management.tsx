@@ -84,7 +84,7 @@ export function FeesManagement() {
   return (
     <div className='space-y-4'>
       {/* Top Stat Overview Cards */}
-      <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
+      <div className='grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-4 gap-3'>
         <Card>
           <CardContent className='p-4'>
             <div className='flex items-center justify-between text-muted-foreground'>
@@ -152,32 +152,32 @@ export function FeesManagement() {
 
       {/* Tabs: Student Fee Dues vs Transaction Receipts History */}
       <Tabs defaultValue='dues' className='space-y-4'>
-        <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
-          <TabsList>
-            <TabsTrigger value='dues'>Student Fee Status</TabsTrigger>
-            <TabsTrigger value='defaulters' className='gap-1.5'>
-              <span>Fee Defaulters & Broadcast</span>
+        <div className='flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3'>
+          <TabsList className='w-full lg:w-auto flex flex-wrap h-auto p-1 gap-1'>
+            <TabsTrigger value='dues' className='flex-1 sm:flex-initial text-xs sm:text-sm py-1.5'>Student Fees</TabsTrigger>
+            <TabsTrigger value='defaulters' className='flex-1 sm:flex-initial text-xs sm:text-sm py-1.5 gap-1.5'>
+              <span>Defaulters & Broadcast</span>
               {pendingCount > 0 && (
                 <Badge variant='destructive' className='text-[10px] py-0 px-1.5 h-4 font-mono'>
                   {pendingCount}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value='receipts'>Payment Receipts History</TabsTrigger>
+            <TabsTrigger value='receipts' className='flex-1 sm:flex-initial text-xs sm:text-sm py-1.5'>Receipts History</TabsTrigger>
           </TabsList>
 
-          <div className='flex items-center gap-2'>
+          <div className='flex flex-col min-[480px]:flex-row items-stretch sm:items-center gap-2'>
             <div className='relative flex-1 sm:w-64'>
               <Search className='absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground' />
               <Input
                 placeholder='Search student, reg no...'
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className='pl-8'
+                className='pl-8 h-9 text-xs sm:text-sm'
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className='w-[130px]'>
+              <SelectTrigger className='w-full min-[480px]:w-[130px] h-9 text-xs'>
                 <SelectValue placeholder='Fee Status' />
               </SelectTrigger>
               <SelectContent>
@@ -197,13 +197,13 @@ export function FeesManagement() {
               <table className='w-full text-sm text-left'>
                 <thead className='bg-muted/50 border-b text-xs uppercase text-muted-foreground'>
                   <tr>
-                    <th className='py-3 px-4'>Student</th>
-                    <th className='py-3 px-4'>Membership Plan</th>
-                    <th className='py-3 px-4'>Total Fee</th>
-                    <th className='py-3 px-4'>Amount Paid</th>
-                    <th className='py-3 px-4'>Balance Due</th>
-                    <th className='py-3 px-4'>Status</th>
-                    <th className='py-3 px-4 text-right'>Action</th>
+                    <th className='py-3 px-4 min-w-[170px] whitespace-nowrap'>Student</th>
+                    <th className='py-3 px-4 min-w-[140px] whitespace-nowrap'>Membership Plan</th>
+                    <th className='py-3 px-4 min-w-[100px] whitespace-nowrap'>Total Fee</th>
+                    <th className='py-3 px-4 min-w-[110px] whitespace-nowrap'>Amount Paid</th>
+                    <th className='py-3 px-4 min-w-[110px] whitespace-nowrap'>Balance Due</th>
+                    <th className='py-3 px-4 min-w-[100px] whitespace-nowrap'>Status</th>
+                    <th className='py-3 px-4 min-w-[90px] text-right whitespace-nowrap'>Action</th>
                   </tr>
                 </thead>
                 <tbody className='divide-y'>
@@ -310,13 +310,13 @@ export function FeesManagement() {
               <table className='w-full text-sm text-left'>
                 <thead className='bg-muted/50 border-b text-xs uppercase text-muted-foreground'>
                   <tr>
-                    <th className='py-3 px-4'>Receipt No.</th>
-                    <th className='py-3 px-4'>Date</th>
-                    <th className='py-3 px-4'>Student</th>
-                    <th className='py-3 px-4'>Mode</th>
-                    <th className='py-3 px-4'>Amount Paid</th>
-                    <th className='py-3 px-4'>Remarks</th>
-                    <th className='py-3 px-4 text-right'>Action</th>
+                    <th className='py-3 px-4 min-w-[130px] whitespace-nowrap'>Receipt No.</th>
+                    <th className='py-3 px-4 min-w-[110px] whitespace-nowrap'>Date</th>
+                    <th className='py-3 px-4 min-w-[160px] whitespace-nowrap'>Student</th>
+                    <th className='py-3 px-4 min-w-[90px] whitespace-nowrap'>Mode</th>
+                    <th className='py-3 px-4 min-w-[110px] whitespace-nowrap'>Amount Paid</th>
+                    <th className='py-3 px-4 min-w-[150px] whitespace-nowrap'>Remarks</th>
+                    <th className='py-3 px-4 min-w-[90px] text-right whitespace-nowrap'>Action</th>
                   </tr>
                 </thead>
                 <tbody className='divide-y'>

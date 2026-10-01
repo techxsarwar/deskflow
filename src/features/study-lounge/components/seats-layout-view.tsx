@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react'
 import {
   Armchair,
-  CheckCircle2,
   User,
   Sparkles,
   Trash2,
@@ -156,12 +155,12 @@ export function SeatsLayoutView() {
             Click any desk to allocate to an unassigned student or manage floor details.
           </p>
         </div>
-        <div className='flex flex-wrap items-center gap-2'>
+        <div className='flex flex-col min-[480px]:flex-row flex-wrap items-stretch sm:items-center gap-2'>
           {expiredStudentsHoldingSeats.length > 0 && (
             <Button
               type='button'
               variant='destructive'
-              className='gap-2 font-semibold shadow-xs text-xs'
+              className='gap-2 font-semibold shadow-xs text-xs w-full min-[480px]:w-auto'
               onClick={() => {
                 if (
                   confirm(
@@ -179,7 +178,7 @@ export function SeatsLayoutView() {
 
           <Button
             type='button'
-            className='bg-emerald-600 hover:bg-emerald-700 text-white gap-2 font-semibold shadow-xs text-xs'
+            className='bg-emerald-600 hover:bg-emerald-700 text-white gap-2 font-semibold shadow-xs text-xs w-full min-[480px]:w-auto'
             onClick={() => setShareDialogOpen(true)}
           >
             <Share2 className='h-4 w-4' />
@@ -203,7 +202,7 @@ export function SeatsLayoutView() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className='grid grid-cols-3 sm:grid-cols-6 md:grid-cols-9 gap-3'>
+            <div className='grid grid-cols-3 sm:grid-cols-6 md:grid-cols-9 gap-2 sm:gap-3'>
               {silentHall.map((seat) => {
                 const isOccupied = seat.status === 'occupied'
                 const occupant = getSeatOccupant(seat)
@@ -212,7 +211,7 @@ export function SeatsLayoutView() {
                   <div
                     key={seat.id}
                     onClick={() => handleSeatClick(seat)}
-                    className={`relative p-3 rounded-xl border-2 flex flex-col items-center justify-between cursor-pointer transition-all hover:scale-105 select-none ${
+                    className={`relative p-2 sm:p-3 rounded-xl border-2 flex flex-col items-center justify-between cursor-pointer transition-all hover:scale-105 select-none ${
                       isOccupied
                         ? isOverdue
                           ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300'
@@ -220,18 +219,18 @@ export function SeatsLayoutView() {
                         : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:border-emerald-500'
                     }`}
                   >
-                    <span className='font-mono font-bold text-sm'>{seat.seatNumber}</span>
+                    <span className='font-mono font-bold text-xs sm:text-sm'>{seat.seatNumber}</span>
                     <Armchair
-                      className={`h-6 w-6 my-1.5 ${
+                      className={`h-5 w-5 sm:h-6 sm:w-6 my-1 sm:my-1.5 ${
                         isOccupied ? (isOverdue ? 'text-rose-600' : 'text-primary') : 'text-emerald-600'
                       }`}
                     />
-                    <span className='text-[10px] font-semibold truncate w-full text-center'>
+                    <span className='text-[9px] sm:text-[10px] font-semibold truncate w-full text-center'>
                       {isOccupied ? seat.currentStudentName?.split(' ')[0] : 'Vacant'}
                     </span>
                     {isOverdue && (
                       <span
-                        className='absolute -top-1 -right-1 h-3 w-3 rounded-full bg-rose-600 ring-2 ring-background'
+                        className='absolute -top-1 -right-1 h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-rose-600 ring-2 ring-background'
                         title='Membership expired beyond grace period'
                       />
                     )}

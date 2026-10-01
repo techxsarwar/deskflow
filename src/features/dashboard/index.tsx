@@ -1,14 +1,12 @@
 import { useState } from 'react'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Armchair,
-  CheckCircle2,
   GraduationCap,
   IndianRupee,
   Share2,
   UserPlus,
   AlertCircle,
-  Clock,
   Sparkles,
   ArrowRight,
   ExternalLink,
@@ -78,23 +76,23 @@ export function Dashboard() {
 
       <Main className='flex flex-1 flex-col gap-6'>
         {/* Welcome & Quick Action Bar */}
-        <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border bg-gradient-to-r from-primary/10 via-primary/5 to-card p-6 shadow-xs'>
+        <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border bg-gradient-to-r from-primary/10 via-primary/5 to-card p-4 sm:p-6 shadow-xs'>
           <div className='space-y-1'>
             <div className='flex items-center gap-2'>
-              <Sparkles className='h-5 w-5 text-primary' />
-              <h1 className='text-2xl font-bold tracking-tight'>
+              <Sparkles className='h-5 w-5 text-primary shrink-0' />
+              <h1 className='text-xl sm:text-2xl font-bold tracking-tight'>
                 Welcome back, Lounge Manager!
               </h1>
             </div>
-            <p className='text-sm text-muted-foreground'>
+            <p className='text-xs sm:text-sm text-muted-foreground'>
               Here is what is happening at your study lounge today.
             </p>
           </div>
 
-          <div className='flex flex-wrap items-center gap-2.5'>
+          <div className='flex flex-col min-[420px]:flex-row flex-wrap items-stretch sm:items-center gap-2 sm:gap-2.5'>
             <Button
               variant='outline'
-              className='gap-1.5 shadow-xs'
+              className='gap-1.5 shadow-xs w-full min-[420px]:w-auto text-xs sm:text-sm'
               onClick={() => setShareLinkOpen(true)}
             >
               <Share2 className='h-4 w-4 text-primary' />
@@ -102,7 +100,7 @@ export function Dashboard() {
             </Button>
 
             <Button
-              className='gap-1.5 shadow-xs'
+              className='gap-1.5 shadow-xs w-full min-[420px]:w-auto text-xs sm:text-sm'
               onClick={() => setFormOpen(true)}
             >
               <UserPlus className='h-4 w-4' />
@@ -113,23 +111,23 @@ export function Dashboard() {
 
         {/* Pending Registrations Alert (if any) */}
         {pendingStudents.length > 0 && (
-          <div className='flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200'>
-            <div className='flex items-center gap-3'>
-              <div className='rounded-lg bg-amber-500/20 p-2'>
+          <div className='flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 sm:p-4 text-amber-900 dark:text-amber-200'>
+            <div className='flex items-start sm:items-center gap-3'>
+              <div className='rounded-lg bg-amber-500/20 p-2 shrink-0 mt-0.5 sm:mt-0'>
                 <AlertCircle className='h-5 w-5 text-amber-600 dark:text-amber-400' />
               </div>
               <div>
-                <p className='text-sm font-semibold'>
+                <p className='text-xs sm:text-sm font-semibold'>
                   {pendingStudents.length} Online Student Registration{pendingStudents.length > 1 ? 's' : ''} Pending
                 </p>
-                <p className='text-xs text-amber-800/80 dark:text-amber-300/80'>
+                <p className='text-[11px] sm:text-xs text-amber-800/80 dark:text-amber-300/80'>
                   Students have submitted admission details online. Confirm desk allocation and approve.
                 </p>
               </div>
             </div>
             <Button
               size='sm'
-              className='bg-amber-600 hover:bg-amber-700 text-white shrink-0'
+              className='bg-amber-600 hover:bg-amber-700 text-white w-full sm:w-auto shrink-0 text-xs'
               onClick={() => navigate({ to: '/students' })}
             >
               Review Now
@@ -139,7 +137,7 @@ export function Dashboard() {
         )}
 
         {/* 4 Core KPI Cards */}
-        <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
+        <div className='grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4'>
           {/* Card 1: Students */}
           <Card>
             <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
@@ -234,9 +232,9 @@ export function Dashboard() {
                 const percentage = Math.round((count / (activeStudents.length || 1)) * 100)
                 return (
                   <div key={key} className='space-y-1.5'>
-                    <div className='flex items-center justify-between text-xs'>
-                      <div className='flex items-center gap-2'>
-                        <span className={`h-2.5 w-2.5 rounded-full ${
+                    <div className='flex flex-wrap items-center justify-between gap-1 text-xs'>
+                      <div className='flex items-center gap-2 min-w-0'>
+                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
                           key === 'fullday'
                             ? 'bg-emerald-500'
                             : key === 'morning'
@@ -248,9 +246,9 @@ export function Dashboard() {
                                   : 'bg-indigo-500'
                         }`} />
                         <span className='font-semibold'>{shift?.label}</span>
-                        <span className='text-muted-foreground'>({shift?.timing})</span>
+                        <span className='text-muted-foreground text-[11px] truncate sm:overflow-visible'>({shift?.timing})</span>
                       </div>
-                      <span className='font-mono font-medium'>{count} Students ({percentage}%)</span>
+                      <span className='font-mono font-medium text-[11px] sm:text-xs shrink-0'>{count} Students ({percentage}%)</span>
                     </div>
                     <div className='h-2 w-full overflow-hidden rounded-full bg-secondary'>
                       <div

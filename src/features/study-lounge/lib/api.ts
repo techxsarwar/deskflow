@@ -1,7 +1,11 @@
 import axios from 'axios'
 import { Student, FeeTransaction, LoungeSeat, LoungeSummaryStats, PaymentMode } from '../types'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
+// In production on Vercel (same-origin multi-service routing), requests default to relative ''
+// In local Vite dev, defaults to http://localhost:8080 unless VITE_API_URL is explicitly set
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ??
+  (import.meta.env.DEV ? 'http://localhost:8080' : '')
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

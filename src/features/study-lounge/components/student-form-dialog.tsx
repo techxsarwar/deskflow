@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, Image as ImageIcon, Loader2, Trash2, Upload, User } from 'lucide-react'
+import { Camera, Loader2, Trash2, Upload, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {

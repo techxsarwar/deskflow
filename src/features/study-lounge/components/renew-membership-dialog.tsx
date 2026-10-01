@@ -2,12 +2,9 @@ import { useState, useEffect } from 'react'
 import {
   Calendar,
   Check,
-  CreditCard,
   IndianRupee,
   MessageSquare,
   RefreshCw,
-  Sparkles,
-  User,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -119,7 +116,7 @@ export function RenewMembershipDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='sm:max-w-md'>
+      <DialogContent className='sm:max-w-md max-h-[90vh] overflow-y-auto'>
         <DialogHeader>
           <div className='flex items-center gap-2 text-primary'>
             <div className='rounded-lg bg-primary/10 p-2'>

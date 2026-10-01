@@ -15,7 +15,7 @@ export const supabaseService = {
     }
 
     try {
-      const { data, error, count } = await client
+      const { error, count } = await client
         .from('students')
         .select('*', { count: 'exact', head: true })
 

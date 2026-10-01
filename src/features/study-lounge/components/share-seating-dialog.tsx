@@ -1,16 +1,13 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import {
-  Armchair,
   Check,
   Copy,
   MessageSquare,
   RotateCcw,
   Share2,
-  Sparkles,
   Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -144,7 +141,7 @@ export function ShareSeatingDialog({
             <Label className='text-xs font-semibold text-muted-foreground uppercase tracking-wider'>
               Roster View Filter
             </Label>
-            <div className='grid grid-cols-3 gap-2'>
+            <div className='grid grid-cols-1 min-[420px]:grid-cols-3 gap-1.5 sm:gap-2'>
               <Button
                 type='button'
                 variant={filterType === 'all' ? 'default' : 'outline'}

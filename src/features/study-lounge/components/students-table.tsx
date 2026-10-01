@@ -11,12 +11,9 @@ import {
   CheckCircle2,
   Armchair,
   Clock,
-  Phone,
-  Filter,
   AlertTriangle,
   RefreshCw,
   XCircle,
-  Calendar,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -38,7 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
-import { Student, ShiftType, StudentStatus, FeeTransaction } from '../types'
+import { Student, FeeTransaction } from '../types'
 import { SHIFT_DETAILS } from '../data/mock-data'
 import { useStudyLoungeStore } from '../store/study-lounge-store'
 import { getMembershipLifecycle } from '../lib/membership-utils'
@@ -153,7 +150,7 @@ export function StudentsTable() {
   return (
     <div className='space-y-4'>
       {/* Top Stat Cards */}
-      <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
+      <div className='grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-4 gap-3'>
         <Card>
           <CardContent className='p-4'>
             <p className='text-xs font-medium text-muted-foreground'>Total Enrolled</p>
@@ -265,68 +262,70 @@ export function StudentsTable() {
       )}
 
       {/* Action Controls & Filters */}
-      <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-        <div className='flex flex-1 flex-wrap items-center gap-2'>
-          <div className='relative flex-1 sm:max-w-xs'>
+      <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
+        <div className='flex flex-1 flex-col min-[480px]:flex-row flex-wrap items-stretch min-[480px]:items-center gap-2'>
+          <div className='relative flex-1 min-w-[200px]'>
             <Search className='absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground' />
             <Input
               placeholder='Search by name, phone, desk...'
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className='pl-8'
+              className='pl-8 h-9 text-xs sm:text-sm'
             />
           </div>
 
-          <Select value={shiftFilter} onValueChange={setShiftFilter}>
-            <SelectTrigger className='w-[130px]'>
-              <SelectValue placeholder='Shift' />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value='all'>All Shifts</SelectItem>
-              <SelectItem value='morning'>Morning</SelectItem>
-              <SelectItem value='afternoon'>Afternoon</SelectItem>
-              <SelectItem value='evening'>Evening</SelectItem>
-              <SelectItem value='night'>Night</SelectItem>
-              <SelectItem value='fullday'>Full Day</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className='grid grid-cols-3 gap-2 w-full min-[480px]:w-auto min-[480px]:flex min-[480px]:flex-wrap'>
+            <Select value={shiftFilter} onValueChange={setShiftFilter}>
+              <SelectTrigger className='w-full min-[480px]:w-[115px] sm:w-[130px] h-9 text-xs'>
+                <SelectValue placeholder='Shift' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>All Shifts</SelectItem>
+                <SelectItem value='morning'>Morning</SelectItem>
+                <SelectItem value='afternoon'>Afternoon</SelectItem>
+                <SelectItem value='evening'>Evening</SelectItem>
+                <SelectItem value='night'>Night</SelectItem>
+                <SelectItem value='fullday'>Full Day</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className='w-[130px]'>
-              <SelectValue placeholder='Status' />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value='all'>All Status</SelectItem>
-              <SelectItem value='active'>Active</SelectItem>
-              <SelectItem value='pending'>Pending</SelectItem>
-              <SelectItem value='expired'>Expired</SelectItem>
-            </SelectContent>
-          </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className='w-full min-[480px]:w-[115px] sm:w-[130px] h-9 text-xs'>
+                <SelectValue placeholder='Status' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>All Status</SelectItem>
+                <SelectItem value='active'>Active</SelectItem>
+                <SelectItem value='pending'>Pending</SelectItem>
+                <SelectItem value='expired'>Expired</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select value={paymentFilter} onValueChange={setPaymentFilter}>
-            <SelectTrigger className='w-[130px]'>
-              <SelectValue placeholder='Fee Status' />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value='all'>All Fees</SelectItem>
-              <SelectItem value='paid'>Fully Paid</SelectItem>
-              <SelectItem value='partial'>Partial Due</SelectItem>
-              <SelectItem value='pending'>Unpaid</SelectItem>
-            </SelectContent>
-          </Select>
+            <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+              <SelectTrigger className='w-full min-[480px]:w-[115px] sm:w-[130px] h-9 text-xs'>
+                <SelectValue placeholder='Fee Status' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>All Fees</SelectItem>
+                <SelectItem value='paid'>Fully Paid</SelectItem>
+                <SelectItem value='partial'>Partial Due</SelectItem>
+                <SelectItem value='pending'>Unpaid</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div className='flex items-center gap-2'>
+        <div className='flex items-center gap-2 w-full lg:w-auto'>
           <Button
             variant='outline'
-            className='gap-1.5'
+            className='gap-1.5 flex-1 lg:flex-initial h-9 text-xs sm:text-sm'
             onClick={() => setShareLinkOpen(true)}
           >
             <Share2 className='h-4 w-4 text-primary' />
             Share Link
           </Button>
           <Button
-            className='gap-1.5'
+            className='gap-1.5 flex-1 lg:flex-initial h-9 text-xs sm:text-sm'
             onClick={() => {
               setEditingStudent(null)
               setFormOpen(true)
@@ -344,13 +343,13 @@ export function StudentsTable() {
           <table className='w-full text-sm text-left'>
             <thead className='bg-muted/50 border-b text-xs uppercase text-muted-foreground'>
               <tr>
-                <th className='py-3 px-4'>Student</th>
-                <th className='py-3 px-4'>Slot & Desk</th>
-                <th className='py-3 px-4'>Contact & Goal</th>
-                <th className='py-3 px-4'>Membership & Validity</th>
-                <th className='py-3 px-4'>Fee Status</th>
-                <th className='py-3 px-4'>Status</th>
-                <th className='py-3 px-4 text-right'>Actions</th>
+                <th className='py-3 px-4 min-w-[200px] whitespace-nowrap'>Student</th>
+                <th className='py-3 px-4 min-w-[140px] whitespace-nowrap'>Slot & Desk</th>
+                <th className='py-3 px-4 min-w-[150px] whitespace-nowrap'>Contact & Goal</th>
+                <th className='py-3 px-4 min-w-[160px] whitespace-nowrap'>Membership & Validity</th>
+                <th className='py-3 px-4 min-w-[120px] whitespace-nowrap'>Fee Status</th>
+                <th className='py-3 px-4 min-w-[100px] whitespace-nowrap'>Status</th>
+                <th className='py-3 px-4 min-w-[80px] text-right whitespace-nowrap'>Actions</th>
               </tr>
             </thead>
             <tbody className='divide-y'>

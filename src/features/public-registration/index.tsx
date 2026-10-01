@@ -10,15 +10,9 @@ import {
   BatteryCharging,
   Printer,
   ChevronRight,
-  ShieldCheck,
   Building2,
-  Phone,
-  Mail,
-  MapPin,
-  Calendar,
   Armchair,
   Check,
-  Lock,
   AlertCircle,
   FolderLock,
   Camera,
@@ -829,7 +823,7 @@ export function PublicStudentRegistration() {
                 </div>
 
                 {/* Pricing Summary Box */}
-                <div className='rounded-xl bg-muted/40 border p-4 flex flex-wrap items-center justify-between gap-4'>
+                <div className='rounded-xl bg-muted/40 border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4'>
                   <div>
                     <span className='text-xs text-muted-foreground block'>Total Membership Fee:</span>
                     <span className='text-2xl font-black text-foreground'>
@@ -839,7 +833,7 @@ export function PublicStudentRegistration() {
                       ✓ Free Dedicated Locker Included • No Hidden Charges
                     </span>
                   </div>
-                  <div className='text-right text-xs text-muted-foreground'>
+                  <div className='text-left sm:text-right text-xs text-muted-foreground space-y-0.5'>
                     <p>✓ High-Speed 5G Wi-Fi</p>
                     <p>✓ Filtered RO Drinking Water</p>
                     <p>✓ 100% Air-Conditioned Silent Zone</p>
@@ -866,13 +860,22 @@ export function PublicStudentRegistration() {
                 <Button
                   type='submit'
                   size='lg'
-                  disabled={!agreedToRules}
-                  className='w-full text-base font-semibold py-6 shadow-md'
+                  disabled={!agreedToRules || isUploadingPhoto}
+                  className='w-full text-sm sm:text-base font-semibold py-5 sm:py-6 shadow-md'
                 >
-                  {selectedSeatNumber
-                    ? `Reserve Desk ${selectedSeatNumber} & Get Admission Slip`
-                    : 'Select Your Desk & Get Admission Slip'}
-                  <ChevronRight className='ml-2 h-5 w-5' />
+                  {isUploadingPhoto ? (
+                    <>
+                      <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                      Processing Admission & Desk Lock...
+                    </>
+                  ) : (
+                    <>
+                      {selectedSeatNumber
+                        ? `Reserve Desk ${selectedSeatNumber} & Get Admission Slip`
+                        : 'Select Your Desk & Get Admission Slip'}
+                      <ChevronRight className='ml-2 h-5 w-5' />
+                    </>
+                  )}
                 </Button>
               </div>
             </form>
