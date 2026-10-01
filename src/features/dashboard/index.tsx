@@ -29,7 +29,6 @@ import { useStudyLoungeStore } from '@/features/study-lounge/store/study-lounge-
 import { SHIFT_DETAILS } from '@/features/study-lounge/data/mock-data'
 import { ShareLinkDialog } from '@/features/study-lounge/components/share-link-dialog'
 import { StudentFormDialog } from '@/features/study-lounge/components/student-form-dialog'
-import { SupabaseConnectDialog } from '@/features/study-lounge/components/supabase-connect-dialog'
 
 export function Dashboard() {
   const navigate = useNavigate()
@@ -69,7 +68,6 @@ export function Dashboard() {
           </h2>
         </div>
         <Search />
-        <SupabaseConnectDialog />
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>

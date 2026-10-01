@@ -3,7 +3,6 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { SupabaseConnectDialog } from './components/supabase-connect-dialog'
 import { SeatsLayoutView } from './components/seats-layout-view'
 
 export function StudyLoungeSeats() {
@@ -11,7 +10,6 @@ export function StudyLoungeSeats() {
     <>
       <Header fixed>
         <Search className='me-auto' />
-        <SupabaseConnectDialog />
         <ThemeSwitch />
         <ProfileDropdown />
       </Header>
