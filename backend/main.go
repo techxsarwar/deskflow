@@ -76,6 +76,7 @@ func initServer() {
 	mux := http.NewServeMux()
 
 	// API Routes
+	mux.HandleFunc("GET /", h.RootHandler)
 	mux.HandleFunc("GET /health", h.HealthCheck)
 	mux.HandleFunc("GET /api/dashboard", h.GetDashboard)
 

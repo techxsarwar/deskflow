@@ -27,7 +27,22 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
-// GET /api/health
+// GET /
+func (h *Handler) RootHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"service":   "Vertical Classes Library Backend API",
+		"status":    "running",
+		"version":   "1.0.0",
+		"message":   "DeskFlow Golang backend server is online and operational.",
+		"endpoints": []string{"/health", "/api/dashboard", "/api/students", "/api/seats", "/api/fees/transactions"},
+	})
+}
+
+// GET /api/health or /health
 func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "ok",
