@@ -63,7 +63,12 @@ func NewStore(dataDir string, dbURL string) (*Store, error) {
 
 	// Local file fallback
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create data directory: %w", err)
+		fallbackDir := filepath.Join(os.TempDir(), "deskflow_data")
+		if err2 := os.MkdirAll(fallbackDir, 0755); err2 == nil {
+			dataDir = fallbackDir
+		} else {
+			return nil, fmt.Errorf("failed to create data directory: %w", err)
+		}
 	}
 
 	filePath := filepath.Join(dataDir, "study_lounge_data.json")
@@ -72,15 +77,16 @@ func NewStore(dataDir string, dbURL string) (*Store, error) {
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		s.seedInitialData()
 		if err := s.saveToFile(); err != nil {
-			return nil, fmt.Errorf("failed to save initial seed: %w", err)
+			log.Printf("Warning: failed to save initial seed to %s: %v", filePath, err)
 		}
 	} else {
 		if err := s.loadFromFile(); err != nil {
-			return nil, fmt.Errorf("failed to load data from file: %w", err)
+			log.Printf("Warning: failed to load data from file: %v. Re-seeding.", err)
+			s.seedInitialData()
 		}
 	}
 
-	log.Println("📁 Golang backend operating in local JSON file mode.")
+	log.Printf("📁 Golang backend operating in local JSON mode at: %s", filePath)
 	return s, nil
 }
 

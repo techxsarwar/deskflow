@@ -6,9 +6,15 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"study-lounge-backend/handlers"
 	"study-lounge-backend/storage"
+)
+
+var (
+	appHandler http.Handler
+	initOnce   sync.Once
 )
 
 // corsMiddleware adds CORS headers to enable API calls from Vite frontend
@@ -52,13 +58,8 @@ func loadEnv() {
 	}
 }
 
-func main() {
+func initServer() {
 	loadEnv()
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
 
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
@@ -68,7 +69,7 @@ func main() {
 	dbURL := os.Getenv("DATABASE_URL")
 	store, err := storage.NewStore(dataDir, dbURL)
 	if err != nil {
-		log.Fatalf("Failed to initialize store: %v", err)
+		log.Printf("Failed to initialize store: %v", err)
 	}
 
 	h := handlers.NewHandler(store)
@@ -97,7 +98,26 @@ func main() {
 	mux.HandleFunc("GET /api/seats", h.GetSeats)
 	mux.HandleFunc("POST /api/seats/assign", h.AssignSeat)
 
-	handler := corsMiddleware(mux)
+	appHandler = corsMiddleware(mux)
+}
+
+// Handler is exported for Vercel Go Serverless execution if invoked as a function
+func Handler(w http.ResponseWriter, r *http.Request) {
+	initOnce.Do(initServer)
+	if appHandler != nil {
+		appHandler.ServeHTTP(w, r)
+	} else {
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+	}
+}
+
+func main() {
+	initOnce.Do(initServer)
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
 	fmt.Println("====================================================")
 	fmt.Printf("📚 Vertical Classes Library - Golang Backend Server\n")
@@ -115,7 +135,7 @@ func main() {
 	fmt.Printf(" • POST   http://localhost:%s/api/seats/assign\n", port)
 	fmt.Println("====================================================")
 
-	if err := http.ListenAndServe(":"+port, handler); err != nil {
+	if err := http.ListenAndServe(":"+port, appHandler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
