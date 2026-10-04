@@ -33,6 +33,8 @@ const bot = new Bot(BOT_TOKEN);
 const adminFlowState = new Map();
 // In-memory state for 2-step attendance verification (Contact -> Location)
 const pendingAttendanceState = new Map();
+// In-memory mapping of Telegram Chat ID -> Student Profile
+const studentChatMap = new Map();
 
 // ==============================================================================
 // 1. Interactive Keyboards & Menus
@@ -47,14 +49,15 @@ function getMainMenuKeyboard() {
     .text('⚠️ Defaulters & Dues', 'menu_defaulters')
     .row()
     .text('📍 Live Attendance', 'menu_attendance')
+    .text('🚻 Restroom & Breaks', 'menu_breaks')
+    .row()
     .text('📥 Admissions Queue', 'menu_admissions')
-    .row()
     .text('📊 Daily Stats', 'menu_stats')
+    .row()
     .text('📷 Attendance QRs', 'menu_qrs')
-    .row()
     .text('🛡 GPS Geofence (75m)', 'menu_geofence')
-    .text('📶 WiFi Credentials', 'menu_wifi')
     .row()
+    .text('📶 WiFi Credentials', 'menu_wifi')
     .text('📢 Post Announcement', 'menu_announcement')
     .row();
 
@@ -199,6 +202,252 @@ bot.command(['wifi', 'wificreds'], async (ctx) => {
 
 bot.command(['announce', 'broadcast'], async (ctx) => {
   await renderAnnouncementMenu(ctx, false);
+});
+
+// ==============================================================================
+// Restroom & Break Commands & Presence Checker (/check, /break, /back, /breaks)
+// ==============================================================================
+
+async function showBreakOptions(ctx, student, edit = false) {
+  const activeBreak = await db.getActiveBreakForStudent(student.id);
+  if (activeBreak) {
+    const expTime = new Date(activeBreak.expected_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+    const autoTime = new Date(activeBreak.auto_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const text = `
+🟡 <b>Active Restroom / Study Break</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+🪑 <b>Desk:</b> ${student.seat_number || 'Assigned'}
+⏳ <b>Timer:</b> ${activeBreak.duration_minutes} Minutes
+🕒 <b>Expected Back:</b> ~<b>${expTime}</b>
+🛡 <b>Auto-Reset (Grace Period):</b> <b>${autoTime}</b>
+
+👇 <i>Back at your desk? Tap below to resume studying:</i>
+`;
+
+    const kb = new InlineKeyboard()
+      .text('🟢 I\'m Back at My Desk', `break_end_${student.id}`)
+      .row();
+
+    if (edit && ctx.callbackQuery) {
+      return safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
+    }
+    return ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+  }
+
+  const text = `
+🚻 <b>Take a Restroom / Study Break</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name} (Desk: <b>${student.seat_number || 'Assigned'}</b>)
+
+⏱ <b>Select your break duration:</b>
+<i>(Includes +5 minutes automatic grace period before resetting to 'Studying'.)</i>
+`;
+
+  const kb = new InlineKeyboard()
+    .text('⏱ 10 Mins (Restroom)', `break_start_${student.id}_10`)
+    .row()
+    .text('⏱ 15 Mins (Standard)', `break_start_${student.id}_15`)
+    .row()
+    .text('⏱ 30 Mins (Max / Meal)', `break_start_${student.id}_30`)
+    .row()
+    .text('🔙 Cancel', 'menu_main');
+
+  if (edit && ctx.callbackQuery) {
+    return safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
+  }
+  return ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+}
+
+// Student Break Command
+bot.command(['break', 'rest', 'restroom'], async (ctx) => {
+  const chatId = ctx.chat.id;
+  let student = studentChatMap.get(chatId);
+
+  if (!student) {
+    const { currentlyInside } = await db.getTodayAttendance();
+    if (currentlyInside.length === 1) {
+      student = await db.getStudentById(currentlyInside[0].student_id);
+      if (student) studentChatMap.set(chatId, student);
+    }
+  }
+
+  if (student) {
+    return showBreakOptions(ctx, student, false);
+  }
+
+  // Ask student to select their desk
+  const { currentlyInside } = await db.getTodayAttendance();
+  if (currentlyInside.length === 0) {
+    return ctx.reply('⚠️ No students are currently checked in inside the library hall.');
+  }
+
+  const kb = new InlineKeyboard();
+  for (const s of currentlyInside.slice(0, 10)) {
+    kb.text(`🪑 ${s.student_name} (${s.seat_number})`, `break_select_${s.student_id}`).row();
+  }
+
+  return ctx.reply(`
+🚻 <b>Take a Restroom / Study Break</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👇 <b>Please select your name / desk:</b>
+`, {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+});
+
+// Student Back from Break Command
+bot.command(['back', 'resume', 'imback'], async (ctx) => {
+  const student = studentChatMap.get(ctx.chat.id);
+  if (!student) {
+    const { currentlyInside } = await db.getTodayAttendance();
+    const kb = new InlineKeyboard();
+    for (const s of currentlyInside.slice(0, 10)) {
+      kb.text(`🪑 ${s.student_name} (${s.seat_number})`, `break_end_${s.student_id}`).row();
+    }
+    return ctx.reply('👇 <b>Select your desk to confirm you are back studying:</b>', {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  }
+
+  await db.endStudentBreak({ studentId: student.id });
+  return ctx.reply(`
+🟢 <b>Welcome Back, ${student.full_name}!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your live status is now: 🟢 <b>Inside Hall — Studying at Desk</b>.
+Happy studying! 📚✨
+`, { parse_mode: 'HTML' });
+});
+
+// Presence Checker Command (/check <name or desk>)
+bot.command(['check', 'whereis', 'status'], async (ctx) => {
+  const query = ctx.match?.trim();
+  if (!query) {
+    return ctx.reply(`
+🔍 <b>Check Student Live Presence:</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Type <code>/check &lt;Student Name or Desk&gt;</code>
+
+<i>Examples:</i>
+• <code>/check Sarwar</code>
+• <code>/check Desk 1</code>
+• <code>/check Zaid</code>
+• <code>/check 7006390662</code>
+`, { parse_mode: 'HTML' });
+  }
+
+  try {
+    const res = await db.getStudentPresenceStatus(query);
+    if (!res || !res.found) {
+      return ctx.reply(`❌ <b>Student Not Found</b>\nNo student matches "<b>${query}</b>". Check spelling or desk number (e.g. <code>/check Desk 1</code>).`, { parse_mode: 'HTML' });
+    }
+
+    const s = res.student;
+    const seat = s.seat_number && s.seat_number !== 'Unassigned' ? s.seat_number : 'Assigned Study Desk';
+
+    if (res.status === 'on_break') {
+      const brk = res.activeBreak;
+      const expTimeStr = new Date(brk.expected_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+      const autoTimeStr = new Date(brk.auto_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+
+      const text = `
+📍 <b>Student Presence Status</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${s.full_name}</b>
+🪑 <b>Desk:</b> ${seat}
+
+🟡 <b>Current Status:</b> <b>In Restroom / On Break</b>
+⏳ <b>Timer:</b> ${brk.duration_minutes} Minutes
+${res.isGracePeriod 
+  ? `⚠️ <b>Grace Period Active:</b> Timer expired. Auto-resets in <b>${res.graceMinsRemaining}m</b> (${autoTimeStr})`
+  : `🕒 <b>Expected Back:</b> in ~<b>${res.minsRemaining} mins</b> (${expTimeStr})`}
+
+<i>(Student automatically returns to 'Studying' after the 5m grace period.)</i>
+`;
+      return ctx.reply(text, { parse_mode: 'HTML' });
+    }
+
+    if (res.status === 'studying') {
+      const inTimeStr = res.checkInLog?.check_in_time 
+        ? new Date(res.checkInLog.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
+        : 'Earlier today';
+
+      const text = `
+📍 <b>Student Presence Status</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${s.full_name}</b>
+🪑 <b>Desk:</b> <b>${seat}</b>
+
+🟢 <b>Current Status:</b> <b>Inside Hall — Studying at Desk</b>
+🕒 <b>Checked In:</b> ${inTimeStr} (IST)
+
+<i>Currently active in the study hall. 🤫📖</i>
+`;
+      return ctx.reply(text, { parse_mode: 'HTML' });
+    }
+
+    // Away / Checked Out
+    const outTimeStr = res.lastLog?.check_out_time
+      ? `\n🕒 <b>Last Seen:</b> Checked out at ${new Date(res.lastLog.check_out_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}`
+      : '';
+
+    const text = `
+📍 <b>Student Presence Status</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${s.full_name}</b>
+🪑 <b>Desk:</b> ${seat}
+
+⚪ <b>Current Status:</b> <b>Not in Library (Checked Out / Absent)</b>${outTimeStr}
+`;
+    return ctx.reply(text, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error('/check error:', err);
+    return ctx.reply(`❌ Error checking presence: ${err.message}`);
+  }
+});
+
+// Admin Command /breaks
+bot.command(['breaks', 'livebreaks'], async (ctx) => {
+  try {
+    const summary = await db.getLibraryPresenceSummary();
+    const nowTime = getISTTime();
+
+    let text = `
+🚻 <b>Live Restroom & Break Monitor</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🕒 <b>Time:</b> ${nowTime} (IST)
+📊 <b>Total Present:</b> <b>${summary.totalPresent}</b>
+🟢 <b>Studying at Desks:</b> <b>${summary.studyingCount}</b>
+🟡 <b>In Restroom / On Break:</b> <b>${summary.onBreakCount}</b>
+
+`;
+
+    if (summary.activeBreaks.length > 0) {
+      text += `<b>Students Currently On Break:</b>\n`;
+      for (const b of summary.activeBreaks) {
+        const now = Date.now();
+        const expTime = new Date(b.expected_return).getTime();
+        const autoTime = new Date(b.auto_return).getTime();
+        const minsLeft = Math.max(0, Math.round((expTime - now) / 60000));
+        const graceLeft = Math.max(0, Math.round((autoTime - now) / 60000));
+
+        if (now > expTime) {
+          text += `• ⚠️ <b>${b.student_name}</b> (${b.seat_number}) — Grace Period (${graceLeft}m to auto-reset)\n`;
+        } else {
+          text += `• 🟡 <b>${b.student_name}</b> (${b.seat_number}) — ${b.duration_minutes}m Break (~${minsLeft}m left)\n`;
+        }
+      }
+    } else {
+      text += `<i>All active students are currently at their study desks! 📚</i>\n`;
+    }
+
+    return ctx.reply(text, { parse_mode: 'HTML' });
+  } catch (err) {
+    return ctx.reply(`❌ Error: ${err.message}`);
+  }
 });
 
 // Interactive Text Handler for Custom Amount Input, WiFi Setup & Announcements
@@ -577,6 +826,7 @@ You are outside the library premises. Remote attendance is strictly prohibited, 
     pendingAttendanceState.delete(chatId);
 
     if (action === 'checkout') {
+      await db.endStudentBreak({ studentId: student.id });
       const result = await db.checkOutStudent(student.id, { latitude, longitude, distanceMeters });
       const hours = Math.floor((result.durationMinutes || 0) / 60);
       const mins = (result.durationMinutes || 0) % 60;
@@ -612,6 +862,11 @@ You are outside the library premises. Remote attendance is strictly prohibited, 
 
     // Entrance Check-In
     await db.checkInStudent(student.id, { latitude, longitude, distanceMeters });
+    studentChatMap.set(ctx.chat.id, student);
+
+    const studentActionKb = new InlineKeyboard()
+      .text('🚻 Take a Restroom / Break', `break_start_prompt_${student.id}`)
+      .row();
 
     await ctx.reply(`
 🎉 <b>Check-In Confirmed!</b>
@@ -624,9 +879,11 @@ You are outside the library premises. Remote attendance is strictly prohibited, 
 ⏳ <b>Membership Valid Till:</b> ${student.end_date}
 
 <i>Have a focused and productive study session! 📖🔥</i>
+
+💡 <i>Stepping out for the restroom or tea? Tap below or type <code>/break</code> anytime!</i>
 `, {
       parse_mode: 'HTML',
-      reply_markup: { remove_keyboard: true },
+      reply_markup: studentActionKb,
     });
 
     if (ADMIN_CHAT_ID) {
@@ -2131,6 +2388,154 @@ ${items}
 });
 
 // ==============================================================================
+// 8.7. Restroom & Break Monitor Callbacks
+// ==============================================================================
+
+bot.callbackQuery('menu_breaks', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  try {
+    const summary = await db.getLibraryPresenceSummary();
+    const nowTime = getISTTime();
+
+    let text = `
+🚻 <b>Live Restroom & Break Monitor</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🕒 <b>Time:</b> ${nowTime} (IST)
+📊 <b>Total Students Present:</b> <b>${summary.totalPresent}</b>
+🟢 <b>Studying at Desks:</b> <b>${summary.studyingCount}</b>
+🟡 <b>In Restroom / On Break:</b> <b>${summary.onBreakCount}</b>
+
+`;
+
+    const kb = new InlineKeyboard();
+
+    if (summary.activeBreaks.length > 0) {
+      text += `<b>Students Currently On Break:</b>\n`;
+      for (const b of summary.activeBreaks) {
+        const now = Date.now();
+        const expTime = new Date(b.expected_return).getTime();
+        const autoTime = new Date(b.auto_return).getTime();
+        const minsLeft = Math.max(0, Math.round((expTime - now) / 60000));
+        const graceLeft = Math.max(0, Math.round((autoTime - now) / 60000));
+
+        if (now > expTime) {
+          text += `• ⚠️ <b>${b.student_name}</b> (${b.seat_number}) — Grace Period (${graceLeft}m to auto-reset)\n`;
+        } else {
+          text += `• 🟡 <b>${b.student_name}</b> (${b.seat_number}) — ${b.duration_minutes}m Break (~${minsLeft}m left)\n`;
+        }
+        kb.text(`🟢 End Break: ${b.student_name}`, `break_end_${b.student_id}`).row();
+      }
+    } else {
+      text += `<i>All ${summary.totalPresent} checked-in students are currently at their study desks! 📚</i>\n`;
+    }
+
+    kb.text('🔄 Refresh Status', 'menu_breaks').row();
+    kb.text('📍 Live Attendance', 'menu_attendance');
+    kb.text('🔙 Main Menu', 'menu_main');
+
+    await safeEdit(ctx, text, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    console.error('menu_breaks error:', err);
+    await ctx.reply(`❌ Error loading breaks monitor: ${err.message}`);
+  }
+});
+
+bot.callbackQuery(/^break_start_prompt_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const studentId = ctx.match[1];
+  const student = await db.getStudentById(studentId);
+  if (!student) return ctx.reply('❌ Student not found.');
+  studentChatMap.set(ctx.chat.id, student);
+  await showBreakOptions(ctx, student, true);
+});
+
+bot.callbackQuery(/^break_select_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const studentId = ctx.match[1];
+  const student = await db.getStudentById(studentId);
+  if (!student) return ctx.reply('❌ Student not found.');
+  studentChatMap.set(ctx.chat.id, student);
+  await showBreakOptions(ctx, student, true);
+});
+
+bot.callbackQuery(/^break_start_([^_]+)_(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const studentId = ctx.match[1];
+  const duration = parseInt(ctx.match[2], 10);
+
+  try {
+    const res = await db.startStudentBreak({
+      studentId,
+      durationMinutes: duration,
+      breakType: duration <= 10 ? 'restroom' : duration <= 15 ? 'tea' : 'meal',
+      chatId: ctx.chat.id,
+    });
+
+    if (!res.success) {
+      return ctx.reply(`⚠️ ${res.message}`);
+    }
+
+    const brk = res.breakRecord;
+    const expTime = new Date(brk.expected_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+    const autoTime = new Date(brk.auto_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const text = `
+🟡 <b>Restroom / Study Break Started!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${res.student.full_name}
+🪑 <b>Desk:</b> ${res.student.seat_number || 'Assigned'}
+⏳ <b>Duration:</b> ${duration} Minutes
+🕒 <b>Expected Return:</b> <b>${expTime}</b>
+🛡 <b>Grace Period:</b> +5 Mins (Auto-resets at ${autoTime})
+
+<i>Take your time! If you forget to tap back in, your status will automatically reset to 'Studying' after the 5-minute grace period.</i>
+
+👇 <b>Tap below as soon as you sit back at your desk:</b>
+`;
+
+    const kb = new InlineKeyboard()
+      .text('🟢 I\'m Back at My Desk', `break_end_${res.student.id}`);
+
+    await safeEdit(ctx, text, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    console.error('break_start error:', err);
+    await ctx.reply(`❌ Failed to start break: ${err.message}`);
+  }
+});
+
+bot.callbackQuery(/^break_end_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Welcome back!' });
+  const studentId = ctx.match[1];
+  try {
+    await db.endStudentBreak({ studentId });
+    const student = await db.getStudentById(studentId);
+
+    const text = `
+🟢 <b>Welcome Back!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${student ? student.full_name : 'Student'}</b>
+🪑 <b>Desk:</b> ${student ? student.seat_number : 'Assigned'}
+
+Your live status is now: 🟢 <b>Inside Hall — Studying at Desk</b>.
+Happy studying! 📚✨
+`;
+
+    await safeEdit(ctx, text, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('📋 Main Menu', 'menu_main'),
+    });
+  } catch (err) {
+    await ctx.reply(`❌ Error: ${err.message}`);
+  }
+});
+
+// ==============================================================================
 // 9. Express HTTP Server for Webhook & Web 2FA Integration
 // ==============================================================================
 
@@ -2276,6 +2681,32 @@ server.on('error', (e) => {
     console.error('Server error:', e);
   }
 });
+
+// Background Service: Auto-reset expired student breaks (+5m grace period)
+setInterval(async () => {
+  try {
+    const expiredBreaks = await db.checkAndAutoResetExpiredBreaks();
+    for (const brk of expiredBreaks) {
+      console.log(`[Auto-Reset Break] Student ${brk.student_name} (${brk.seat_number}) break ended after grace period.`);
+      if (brk.telegram_chat_id) {
+        try {
+          await bot.api.sendMessage(brk.telegram_chat_id, `
+🟢 <b>Break Ended — Status Reset to Studying</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${brk.student_name}</b> (Desk: <b>${brk.seat_number || 'Assigned'}</b>)
+
+Your ${brk.duration_minutes}-minute break timer (including the +5 minutes grace period) has expired.
+
+Your status is now: 🟢 <b>Inside Hall — Studying at Desk</b>.
+Welcome back to your studies! 📚✨
+`, { parse_mode: 'HTML' });
+        } catch (e) {}
+      }
+    }
+  } catch (err) {
+    console.error('Auto-reset breaks error:', err.message);
+  }
+}, 30000);
 
 async function runBot() {
   while (true) {

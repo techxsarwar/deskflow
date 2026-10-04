@@ -502,6 +502,240 @@ async function recordAnnouncement({ title, body, author = 'Admin', sentCount = 0
   return newEntry;
 }
 
+// ==============================================================================
+// Student Restroom & Break Management
+// ==============================================================================
+
+async function startStudentBreak({ studentId, durationMinutes = 15, breakType = 'restroom', chatId = null }) {
+  const student = await getStudentById(studentId);
+  if (!student) throw new Error('Student not found');
+
+  const todayStr = getISTDateString();
+  const { data: activeLog } = await supabase
+    .from('attendance_logs')
+    .select('*')
+    .eq('student_id', student.id)
+    .eq('date', todayStr)
+    .eq('status', 'checked_in')
+    .limit(1);
+
+  if (!activeLog || activeLog.length === 0) {
+    return {
+      success: false,
+      error: 'not_checked_in',
+      message: 'You must be checked in to the library before taking a break.',
+      student,
+    };
+  }
+
+  // End any currently active break for this student
+  await supabase
+    .from('student_breaks')
+    .update({ status: 'completed', ended_at: new Date().toISOString() })
+    .eq('student_id', student.id)
+    .eq('status', 'active');
+
+  const now = new Date();
+  const duration = parseInt(durationMinutes, 10) || 15;
+  const grace = 5;
+  const expectedReturn = new Date(now.getTime() + duration * 60 * 1000);
+  const autoReturn = new Date(now.getTime() + (duration + grace) * 60 * 1000);
+
+  const { data, error } = await supabase
+    .from('student_breaks')
+    .insert({
+      student_id: student.id,
+      student_name: student.full_name,
+      seat_number: student.seat_number,
+      phone: student.phone,
+      telegram_chat_id: chatId ? parseInt(chatId, 10) : null,
+      break_type: breakType,
+      duration_minutes: duration,
+      grace_minutes: grace,
+      started_at: now.toISOString(),
+      expected_return: expectedReturn.toISOString(),
+      auto_return: autoReturn.toISOString(),
+      status: 'active',
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return {
+    success: true,
+    breakRecord: data,
+    student,
+  };
+}
+
+async function endStudentBreak({ studentId }) {
+  const nowStr = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('student_breaks')
+    .update({ status: 'completed', ended_at: nowStr })
+    .eq('student_id', studentId)
+    .eq('status', 'active')
+    .select();
+
+  if (error) throw error;
+  return { success: true, endedCount: data ? data.length : 0 };
+}
+
+async function getActiveBreakForStudent(studentId) {
+  const now = new Date();
+  const { data } = await supabase
+    .from('student_breaks')
+    .select('*')
+    .eq('student_id', studentId)
+    .eq('status', 'active')
+    .order('started_at', { ascending: false })
+    .limit(1);
+
+  if (!data || data.length === 0) return null;
+  const record = data[0];
+
+  // If auto-return has expired, auto-complete it
+  if (now >= new Date(record.auto_return)) {
+    await supabase
+      .from('student_breaks')
+      .update({ status: 'auto_completed', ended_at: now.toISOString() })
+      .eq('id', record.id);
+    return null;
+  }
+
+  return record;
+}
+
+async function getAllActiveBreaks() {
+  const nowStr = new Date().toISOString();
+  // Auto-complete any expired breaks where auto_return has passed
+  await supabase
+    .from('student_breaks')
+    .update({ status: 'auto_completed', ended_at: nowStr })
+    .eq('status', 'active')
+    .lte('auto_return', nowStr);
+
+  const { data, error } = await supabase
+    .from('student_breaks')
+    .select('*')
+    .eq('status', 'active')
+    .order('started_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function checkAndAutoResetExpiredBreaks() {
+  const now = new Date();
+  const nowStr = now.toISOString();
+
+  const { data: expired } = await supabase
+    .from('student_breaks')
+    .select('*')
+    .eq('status', 'active')
+    .lte('auto_return', nowStr);
+
+  if (expired && expired.length > 0) {
+    await supabase
+      .from('student_breaks')
+      .update({ status: 'auto_completed', ended_at: nowStr })
+      .eq('status', 'active')
+      .lte('auto_return', nowStr);
+  }
+
+  return expired || [];
+}
+
+async function getStudentPresenceStatus(query) {
+  if (!query || query.trim() === '') return null;
+  const term = query.trim();
+
+  // Search student by name, phone, reg_no, or seat_number
+  let q = supabase
+    .from('students')
+    .select('*')
+    .or(`full_name.ilike.%${term}%,phone.ilike.%${term}%,seat_number.ilike.%${term}%`)
+    .limit(1);
+
+  const { data: matches, error } = await q;
+  if (error || !matches || matches.length === 0) return null;
+  const student = matches[0];
+
+  const todayStr = getISTDateString();
+  const { data: logs } = await supabase
+    .from('attendance_logs')
+    .select('*')
+    .eq('student_id', student.id)
+    .eq('date', todayStr)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  const isCheckedIn = Boolean(logs && logs.length > 0 && logs[0].status === 'checked_in');
+
+  if (isCheckedIn) {
+    const activeBreak = await getActiveBreakForStudent(student.id);
+    if (activeBreak) {
+      const now = Date.now();
+      const expTime = new Date(activeBreak.expected_return).getTime();
+      const autoTime = new Date(activeBreak.auto_return).getTime();
+      const minsRemaining = Math.max(0, Math.round((expTime - now) / 60000));
+      const graceMinsRemaining = Math.max(0, Math.round((autoTime - now) / 60000));
+
+      return {
+        found: true,
+        student,
+        isCheckedIn: true,
+        status: 'on_break',
+        activeBreak,
+        checkInLog: logs[0],
+        minsRemaining,
+        isGracePeriod: now > expTime && now < autoTime,
+        graceMinsRemaining,
+      };
+    }
+
+    return {
+      found: true,
+      student,
+      isCheckedIn: true,
+      status: 'studying',
+      checkInLog: logs[0],
+    };
+  }
+
+  return {
+    found: true,
+    student,
+    isCheckedIn: false,
+    status: 'away',
+    lastLog: logs && logs.length > 0 ? logs[0] : null,
+  };
+}
+
+async function getLibraryPresenceSummary() {
+  const todayStr = getISTDateString();
+  const { data: checkedInLogs } = await supabase
+    .from('attendance_logs')
+    .select('student_id, student_name, seat_number, check_in_time')
+    .eq('date', todayStr)
+    .eq('status', 'checked_in');
+
+  const activeBreaks = await getAllActiveBreaks();
+  const onBreakStudentIds = new Set(activeBreaks.map((b) => b.student_id));
+
+  const totalPresent = checkedInLogs ? checkedInLogs.length : 0;
+  const onBreakCount = activeBreaks.length;
+  const studyingCount = Math.max(0, totalPresent - onBreakCount);
+
+  return {
+    totalPresent,
+    studyingCount,
+    onBreakCount,
+    activeBreaks,
+    checkedInLogs: checkedInLogs || [],
+  };
+}
+
 async function checkInStudent(studentId, geoData = {}) {
   const student = await getStudentById(studentId);
   if (!student) throw new Error('Student not found');
@@ -740,4 +974,11 @@ module.exports = {
   getActiveStudentsForWifi,
   getAnnouncementsHistory,
   recordAnnouncement,
+  startStudentBreak,
+  endStudentBreak,
+  getActiveBreakForStudent,
+  getAllActiveBreaks,
+  checkAndAutoResetExpiredBreaks,
+  getStudentPresenceStatus,
+  getLibraryPresenceSummary,
 };
