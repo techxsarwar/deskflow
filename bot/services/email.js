@@ -481,9 +481,286 @@ async function sendReminderEmail({ student }) {
   }
 }
 
+function getWifiCredentialsHtml({ student, wifiConfig, libraryName = 'Vertical Classes' }) {
+  const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const seatNo = student?.seat_number && student.seat_number !== 'Unassigned' ? student.seat_number : 'Assigned Study Desk';
+  const ssid = wifiConfig?.ssid || 'Vertical Classes Library';
+  const password = wifiConfig?.password || '';
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Library Wi-Fi Access & Confidential Credentials - ${libraryName}</title>
+</head>
+<body style="margin:0;padding:32px 16px;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;-webkit-font-smoothing:antialiased;">
+  
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:20px;border:1px solid #e2e8f0;box-shadow:0 4px 20px -2px rgba(15,23,42,0.06);overflow:hidden;">
+    
+    <!-- Top Header -->
+    <tr>
+      <td style="padding:32px 36px 20px 36px;border-bottom:1px solid #f1f5f9;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td>
+              <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:#0284c7;text-transform:uppercase;margin-bottom:4px;">
+                ${libraryName.toUpperCase()} &bull; STUDY LOUNGE
+              </div>
+              <div style="font-size:20px;font-weight:800;letter-spacing:-0.4px;color:#0f172a;">
+                Official Wi-Fi Network Pass
+              </div>
+            </td>
+            <td align="right" valign="top">
+              <span style="display:inline-block;padding:6px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:999px;font-size:12px;font-weight:700;color:#16a34a;letter-spacing:0.2px;">
+                &#9679; Active Member Pass
+              </span>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Member Greeting -->
+    <tr>
+      <td style="padding:28px 36px 16px 36px;">
+        <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:6px;">
+          Hello ${student.full_name || 'Student'},
+        </div>
+        <div style="font-size:14px;color:#475569;line-height:1.6;">
+          You are receiving this official communication as an active enrolled student of <b>${libraryName} Study Lounge</b> (Desk: <b>${seatNo}</b>). Below are your confidential credentials to connect to our high-speed member Wi-Fi network.
+        </div>
+      </td>
+    </tr>
+
+    <!-- High-Tech WiFi Credentials Badge Box -->
+    <tr>
+      <td style="padding:0 36px 24px 36px;">
+        <div style="background:linear-gradient(135deg, #090d16 0%, #1e293b 100%);border-radius:16px;padding:24px 28px;color:#ffffff;box-shadow:0 10px 25px -5px rgba(15,23,42,0.25);border:1px solid #334155;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td colspan="2" style="padding-bottom:16px;border-bottom:1px solid #334155;">
+                <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:#38bdf8;text-transform:uppercase;">
+                  SECURE WIRELESS ACCESS DETAILS
+                </div>
+              </td>
+            </tr>
+            
+            <!-- SSID -->
+            <tr>
+              <td style="padding-top:16px;font-size:12px;color:#94a3b8;font-weight:600;width:40%;">
+                Network Name (SSID)
+              </td>
+              <td align="right" style="padding-top:16px;font-size:16px;font-weight:800;color:#f8fafc;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">
+                ${ssid}
+              </td>
+            </tr>
+
+            <!-- Password -->
+            <tr>
+              <td style="padding-top:14px;font-size:12px;color:#94a3b8;font-weight:600;">
+                Wi-Fi Password
+              </td>
+              <td align="right" style="padding-top:14px;">
+                <span style="display:inline-block;padding:5px 12px;background:#0f172a;border:1px dashed #64748b;border-radius:8px;font-size:16px;font-weight:800;letter-spacing:1px;color:#38bdf8;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">
+                  ${password}
+                </span>
+              </td>
+            </tr>
+
+            <!-- Specs -->
+            <tr>
+              <td style="padding-top:14px;font-size:12px;color:#94a3b8;font-weight:600;">
+                Bands & Security
+              </td>
+              <td align="right" style="padding-top:14px;font-size:12px;font-weight:600;color:#cbd5e1;">
+                Dual-Band 5 GHz / 2.4 GHz &bull; WPA2/WPA3
+              </td>
+            </tr>
+          </table>
+        </div>
+      </td>
+    </tr>
+
+    <!-- Wi-Fi Rules & Acceptable Use Policy -->
+    <tr>
+      <td style="padding:0 36px 28px 36px;">
+        <div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:14px;padding:20px 22px;margin-bottom:20px;">
+          <div style="font-size:13px;font-weight:800;color:#92400e;letter-spacing:0.2px;margin-bottom:12px;display:flex;align-items:center;">
+            ⚠️ MANDATORY WI-FI USAGE RULES &amp; SECURITY GUIDELINES
+          </div>
+          
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:12.5px;color:#78350f;line-height:1.6;">
+            <tr>
+              <td valign="top" style="padding-bottom:10px;width:24px;font-size:14px;">🚫</td>
+              <td style="padding-bottom:10px;">
+                <b>DO NOT SHARE WITH OUTSIDERS:</b> These credentials are for registered library students only. Sharing network access with friends, visitors, or non-members is strictly forbidden.
+              </td>
+            </tr>
+            <tr>
+              <td valign="top" style="padding-bottom:10px;width:24px;font-size:14px;">💻</td>
+              <td style="padding-bottom:10px;">
+                <b>1 Primary Study Device:</b> Please connect only your main personal study device (laptop or tablet). Secondary device connections and mobile hotspot tethering are prohibited.
+              </td>
+            </tr>
+            <tr>
+              <td valign="top" style="padding-bottom:10px;width:24px;font-size:14px;">🎧</td>
+              <td style="padding-bottom:10px;">
+                <b>Headphones Mandatory:</b> Video lectures, audio notes, and online tutorials must be played with headphones at all times inside reading rooms.
+              </td>
+            </tr>
+            <tr>
+              <td valign="top" style="padding-bottom:10px;width:24px;font-size:14px;">🛑</td>
+              <td style="padding-bottom:10px;">
+                <b>Strictly Academic Use:</b> High-bandwidth abuse such as torrenting, online gaming, crypto mining, or downloading pirated material will trigger automatic MAC address blocking.
+              </td>
+            </tr>
+            <tr>
+              <td valign="top" style="padding-bottom:0;width:24px;font-size:14px;">⚖️</td>
+              <td style="padding-bottom:0;">
+                <b>Auditing &amp; Membership Revocation:</b> Traffic is monitored at the router level. Any member found violating these guidelines or redistributing credentials will have Wi-Fi access revoked and library membership suspended without refund.
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="font-size:12px;color:#64748b;line-height:1.6;text-align:center;">
+          Need assistance connecting? Please visit the reception counter or email us at <a href="mailto:receipts@globalpulse24.in" style="color:#0284c7;text-decoration:none;font-weight:600;">receipts@globalpulse24.in</a>.
+        </div>
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="padding:20px 36px 28px 36px;background:#fafbfc;border-top:1px solid #f1f5f9;text-align:center;">
+        <div style="font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:0.5px;">
+          VERTICAL CLASSES STUDY LOUNGE &bull; DESKFLOW MANAGEMENT SYSTEM
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:#94a3b8;">
+          Sent to <b>${student.email}</b> on ${dateStr} &bull; Confidential
+        </div>
+      </td>
+    </tr>
+
+  </table>
+
+</body>
+</html>
+  `;
+}
+
+async function sendWifiCredentialsEmail({ student, wifiConfig, libraryName = 'Vertical Classes' }) {
+  if (!student?.email) {
+    throw new Error('Student does not have an email address configured.');
+  }
+  if (!wifiConfig?.ssid || !wifiConfig?.password) {
+    throw new Error('WiFi SSID or Password is not set.');
+  }
+
+  const html = getWifiCredentialsHtml({ student, wifiConfig, libraryName });
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vertical Classes Library <receipts@globalpulse24.in>';
+
+  if (!process.env.RESEND_API_KEY || !resend) {
+    return {
+      success: true,
+      mock: true,
+      recipient: student.email,
+      studentName: student.full_name,
+      message: `Simulated Wi-Fi credentials email sent to ${student.email}.`,
+    };
+  }
+
+  try {
+    const res = await resend.emails.send({
+      from: fromEmail,
+      to: [student.email],
+      subject: `📶 Official Library Wi-Fi Access & Confidential Credentials — ${libraryName}`,
+      html: html,
+    });
+
+    if (res.error) {
+      if (
+        res.error.statusCode === 403 ||
+        res.error.status === 403 ||
+        res.error.message?.includes('testing emails') ||
+        res.error.message?.includes('only send testing emails')
+      ) {
+        console.warn(`Resend testing mode: Forwarding WiFi email to admin email (darsarwar1908@gmail.com) for ${student.email}`);
+        const fallbackRes = await resend.emails.send({
+          from: fromEmail,
+          to: ['darsarwar1908@gmail.com'],
+          subject: `[Student Wi-Fi Pass - Forward to ${student.email}] ${student.full_name} — ${libraryName}`,
+          html: `<div style="background:#fef3c7;padding:12px;border-radius:8px;font-size:13px;color:#92400e;margin-bottom:16px;">
+            ⚠️ <b>Resend Sandbox Notice:</b> Delivered to admin email because custom domain is in testing mode. Please forward to <b>${student.email}</b>.
+          </div>` + html,
+        });
+
+        return {
+          success: true,
+          sandbox: true,
+          data: fallbackRes.data,
+          recipient: 'darsarwar1908@gmail.com',
+          intendedRecipient: student.email,
+          studentName: student.full_name,
+        };
+      }
+
+      throw new Error(res.error.message || 'Resend Wi-Fi dispatch failed');
+    }
+
+    return {
+      success: true,
+      data: res.data,
+      recipient: student.email,
+      studentName: student.full_name,
+    };
+  } catch (error) {
+    console.error(`Failed to send Wi-Fi credentials email to ${student.email}:`, error);
+    throw error;
+  }
+}
+
+async function broadcastWifiCredentials({ students, wifiConfig, libraryName = 'Vertical Classes' }) {
+  const summary = {
+    total: students.length,
+    sent: 0,
+    failed: 0,
+    recipients: [],
+    errors: [],
+  };
+
+  for (const student of students) {
+    try {
+      const res = await sendWifiCredentialsEmail({ student, wifiConfig, libraryName });
+      summary.sent++;
+      summary.recipients.push({
+        id: student.id,
+        name: student.full_name,
+        email: student.email,
+        seat: student.seat_number,
+        sandbox: res.sandbox || false,
+      });
+    } catch (err) {
+      summary.failed++;
+      summary.errors.push({
+        id: student.id,
+        name: student.full_name,
+        email: student.email,
+        error: err.message,
+      });
+    }
+  }
+
+  return summary;
+}
+
 module.exports = {
   sendReceiptEmail,
   sendReminderEmail,
+  sendWifiCredentialsEmail,
+  broadcastWifiCredentials,
   getReceiptHtml,
   getReminderHtml,
+  getWifiCredentialsHtml,
 };

@@ -402,6 +402,64 @@ async function updateGeofenceSettings(newSettings) {
   return merged;
 }
 
+const DEFAULT_WIFI = {
+  ssid: '',
+  password: '',
+  last_updated_at: null,
+  updated_by: 'Admin',
+};
+
+async function getWifiCredentials() {
+  try {
+    const { data, error } = await supabase
+      .from('library_settings')
+      .select('value')
+      .eq('key', 'wifi_credentials')
+      .maybeSingle();
+    if (error || !data || !data.value) {
+      return DEFAULT_WIFI;
+    }
+    return { ...DEFAULT_WIFI, ...data.value };
+  } catch (err) {
+    console.error('getWifiCredentials error:', err.message);
+    return DEFAULT_WIFI;
+  }
+}
+
+async function updateWifiCredentials(newCreds) {
+  const current = await getWifiCredentials();
+  const merged = {
+    ...current,
+    ...newCreds,
+    last_updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from('library_settings')
+    .upsert({
+      key: 'wifi_credentials',
+      value: merged,
+      description: 'Library Wi-Fi Network Name & Security Password',
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return merged;
+}
+
+async function getActiveStudentsForWifi() {
+  const { data, error } = await supabase
+    .from('students')
+    .select('id, full_name, email, phone, seat_number, shift, status')
+    .neq('status', 'cancelled')
+    .neq('status', 'rejected')
+    .not('email', 'is', null)
+    .neq('email', '')
+    .order('full_name', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
 async function checkInStudent(studentId, geoData = {}) {
   const student = await getStudentById(studentId);
   if (!student) throw new Error('Student not found');
@@ -635,4 +693,7 @@ module.exports = {
   calculateDistanceMeters,
   getGeofenceSettings,
   updateGeofenceSettings,
+  getWifiCredentials,
+  updateWifiCredentials,
+  getActiveStudentsForWifi,
 };

@@ -6,7 +6,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 require('dotenv').config();
 
 const db = require('./services/db');
-const { sendReceiptEmail, sendReminderEmail } = require('./services/email');
+const { sendReceiptEmail, sendReminderEmail, sendWifiCredentialsEmail, broadcastWifiCredentials } = require('./services/email');
 const { sendPhoneToken, verifyPhoneToken, sendTelegramOtp, verifyTelegramOtp } = require('./services/otp');
 const { getISTTime, getISTDate, getISTDateString } = require('./services/time');
 
@@ -47,6 +47,7 @@ function getMainMenuKeyboard() {
     .text('📷 Attendance QRs', 'menu_qrs')
     .row()
     .text('🛡 GPS Geofence (75m)', 'menu_geofence')
+    .text('📶 WiFi Credentials', 'menu_wifi')
     .row();
 
   if (WEB_APP_URL) {
@@ -184,10 +185,87 @@ bot.command('checkout', async (ctx) => {
   });
 });
 
-// Interactive Text Handler for Custom Amount Input
+bot.command(['wifi', 'wificreds'], async (ctx) => {
+  await renderWifiMenu(ctx, false);
+});
+
+// Interactive Text Handler for Custom Amount Input & WiFi Setup
 bot.on('message:text', async (ctx, next) => {
   const chatId = ctx.chat.id;
   const state = adminFlowState.get(chatId);
+
+  // WiFi Setup Flow - Step 1: SSID (Network Name)
+  if (state && state.action === 'awaiting_wifi_ssid') {
+    const rawSsid = ctx.message.text.trim();
+    if (!rawSsid || rawSsid.length < 2) {
+      return ctx.reply('⚠️ <b>Invalid Wi-Fi Name!</b>\nPlease type a valid Network Name / SSID (at least 2 characters):', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('🔙 Cancel', 'menu_wifi'),
+      });
+    }
+
+    adminFlowState.set(chatId, {
+      action: 'awaiting_wifi_password',
+      ssid: rawSsid,
+    });
+
+    return ctx.reply(`
+📶 <b>Step 2 of 2: Enter Wi-Fi Password</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📡 <b>Network Name (SSID):</b> <code>${rawSsid}</code>
+
+💬 <b>Please reply with the Wi-Fi Password:</b>
+<i>(Example: <code>StudySafe@2026</code> or <code>Vertical#9988</code>)</i>
+`, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('🔙 Cancel', 'menu_wifi'),
+    });
+  }
+
+  // WiFi Setup Flow - Step 2: Password
+  if (state && state.action === 'awaiting_wifi_password') {
+    const rawPassword = ctx.message.text.trim();
+    if (!rawPassword || rawPassword.length < 4) {
+      return ctx.reply('⚠️ <b>Password Too Short!</b>\nPlease type a secure Wi-Fi password (at least 4 characters):', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('🔙 Cancel', 'menu_wifi'),
+      });
+    }
+
+    const ssid = state.ssid;
+    adminFlowState.delete(chatId);
+
+    try {
+      const updatedCreds = await db.updateWifiCredentials({
+        ssid: ssid,
+        password: rawPassword,
+        updated_by: ctx.from?.first_name || 'Admin',
+      });
+
+      const kb = new InlineKeyboard()
+        .text('🚀 Share Credentials with Students', 'wifi_share_confirm')
+        .row()
+        .text('✏️ Change Details', 'wifi_setup_start')
+        .text('🔙 Main Menu', 'menu_main');
+
+      return ctx.reply(`
+✅ <b>Wi-Fi Credentials Saved Successfully!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📡 <b>Network Name (SSID):</b> <code>${updatedCreds.ssid}</code>
+🔑 <b>Wi-Fi Password:</b> <code>${updatedCreds.password}</code>
+🕒 <b>Saved At:</b> ${getISTTime()} (${getISTDate()})
+
+👇 <b>Tap below to broadcast these credentials to all students via email:</b>
+`, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    } catch (err) {
+      return ctx.reply(`❌ Failed to save Wi-Fi credentials: ${err.message}`, {
+        reply_markup: new InlineKeyboard().text('🔙 Back to WiFi Menu', 'menu_wifi'),
+      });
+    }
+  }
 
   if (state && state.action === 'awaiting_fee_amount') {
     const rawText = ctx.message.text.trim();
@@ -1553,6 +1631,205 @@ bot.callbackQuery('geofence_toggle', async (ctx) => {
     });
   } catch (err) {
     await ctx.reply(`❌ Error toggling geofence: ${err.message}`);
+  }
+});
+
+// ==============================================================================
+// 8.5. Wi-Fi Credentials & Email Broadcast
+// ==============================================================================
+
+async function renderWifiMenu(ctx, edit = true) {
+  try {
+    const creds = await db.getWifiCredentials();
+    const students = await db.getActiveStudentsForWifi();
+    const isConfigured = Boolean(creds.ssid && creds.password);
+
+    const formattedDate = creds.last_updated_at 
+      ? new Date(creds.last_updated_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
+      : 'Not set yet';
+
+    const text = `
+📶 <b>Library Wi-Fi Access & Credentials</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${isConfigured ? `
+📡 <b>Network Name (SSID):</b> <code>${creds.ssid}</code>
+🔑 <b>Wi-Fi Password:</b> <code>${creds.password}</code>
+🕒 <b>Last Updated:</b> ${formattedDate} (${creds.updated_by || 'Admin'})
+👥 <b>Eligible Students with Email:</b> <b>${students.length} students</b>
+
+👇 <i>Select an action below:</i>
+` : `
+⚠️ <b>No Wi-Fi credentials configured yet.</b>
+
+Set up your high-speed library Wi-Fi SSID and password to securely broadcast access to all enrolled students.
+`}
+`;
+
+    const kb = new InlineKeyboard();
+    if (isConfigured) {
+      kb.text(`🚀 Share Credentials (${students.length} Students)`, 'wifi_share_confirm').row();
+      kb.text('✏️ Update Wi-Fi Details', 'wifi_setup_start');
+    } else {
+      kb.text('➕ Set Up Wi-Fi Credentials', 'wifi_setup_start');
+    }
+    kb.text('🔙 Back to Main Menu', 'menu_main');
+
+    if (edit && ctx.callbackQuery) {
+      await safeEdit(ctx, text, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    } else {
+      await ctx.reply(text, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    }
+  } catch (err) {
+    console.error('renderWifiMenu error:', err);
+    await ctx.reply(`❌ Error loading Wi-Fi settings: ${err.message}`);
+  }
+}
+
+bot.callbackQuery('menu_wifi', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await renderWifiMenu(ctx, true);
+});
+
+bot.callbackQuery('wifi_setup_start', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  adminFlowState.set(ctx.chat.id, { action: 'awaiting_wifi_ssid' });
+
+  const text = `
+📶 <b>Configure Library Wi-Fi Credentials</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<b>Step 1 of 2: Network Name (SSID)</b>
+
+💬 <b>Please reply with your Wi-Fi Network Name:</b>
+<i>(Example: <code>VerticalClasses_5G</code> or <code>Library_HighSpeed</code>)</i>
+`;
+
+  const kb = new InlineKeyboard().text('🔙 Cancel', 'menu_wifi');
+
+  await ctx.reply(text, {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+});
+
+bot.callbackQuery('wifi_share_confirm', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  try {
+    const creds = await db.getWifiCredentials();
+    if (!creds.ssid || !creds.password) {
+      return ctx.reply('⚠️ Please configure a Wi-Fi Network Name and Password first before sharing.', {
+        reply_markup: new InlineKeyboard().text('➕ Set Up Wi-Fi', 'wifi_setup_start'),
+      });
+    }
+
+    const students = await db.getActiveStudentsForWifi();
+    if (students.length === 0) {
+      return ctx.reply('⚠️ No active students with valid email addresses found in the database.', {
+        reply_markup: new InlineKeyboard().text('🔙 Back to WiFi Menu', 'menu_wifi'),
+      });
+    }
+
+    const previewList = students.slice(0, 6).map(s => `• <b>${s.full_name}</b> (<code>${s.email}</code>)`).join('\n');
+    const moreText = students.length > 6 ? `\n<i>...and ${students.length - 6} more students</i>` : '';
+
+    const text = `
+📢 <b>Confirm Wi-Fi Credentials Broadcast</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You are about to email the official Wi-Fi access pass to all active students.
+
+📡 <b>Network (SSID):</b> <code>${creds.ssid}</code>
+🔑 <b>Password:</b> <code>${creds.password}</code>
+👥 <b>Total Recipients:</b> <b>${students.length} students</b>
+
+📋 <b>Recipients Preview:</b>
+${previewList}${moreText}
+
+📜 <b>Mandatory Policies Included in Email:</b>
+• 🚫 <b>Confidentiality:</b> Zero sharing with outsiders, visitors, or non-members.
+• 💻 <b>Study Device:</b> 1 primary personal study laptop/tablet only.
+• 🎧 <b>Silent Hall:</b> Headphones mandatory for audio & lecture listening.
+• 🛑 <b>Academic Purpose:</b> Torrenting, gaming, and illegal downloading prohibited.
+• ⚖️ <b>Penalty:</b> Violation triggers immediate Wi-Fi revocation & suspension.
+
+👇 <b>Do you want to send this email now?</b>
+`;
+
+    const kb = new InlineKeyboard()
+      .text('🚀 Send to All Students Now', 'wifi_share_broadcast')
+      .row()
+      .text('🔙 Cancel', 'menu_wifi');
+
+    await safeEdit(ctx, text, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    await ctx.reply(`❌ Error: ${err.message}`);
+  }
+});
+
+bot.callbackQuery('wifi_share_broadcast', async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Starting email broadcast...' });
+  try {
+    const creds = await db.getWifiCredentials();
+    const students = await db.getActiveStudentsForWifi();
+
+    if (students.length === 0) {
+      return ctx.reply('⚠️ No active students with email found.');
+    }
+
+    const statusMsg = await ctx.reply(`⏳ <b>Broadcasting Wi-Fi Pass to ${students.length} students via Resend...</b>\nPlease wait a moment.`, {
+      parse_mode: 'HTML',
+    });
+
+    const summary = await broadcastWifiCredentials({
+      students,
+      wifiConfig: creds,
+      libraryName: 'Vertical Classes',
+    });
+
+    const recipientLines = summary.recipients
+      .map(r => `• ✅ <b>${r.name}</b> (<code>${r.email}</code>) — Desk: <i>${r.seat || 'Assigned'}</i>`)
+      .join('\n');
+
+    const errorLines = summary.errors.length > 0
+      ? `\n⚠️ <b>Errors (${summary.failed}):</b>\n` + summary.errors.map(e => `• ❌ ${e.name} (${e.email}): ${e.error}`).join('\n')
+      : '';
+
+    const finalText = `
+🎉 <b>Wi-Fi Credentials Broadcast Complete!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📡 <b>Network (SSID):</b> <code>${creds.ssid}</code>
+🔑 <b>Password:</b> <code>${creds.password}</code>
+
+📊 <b>Delivery Summary:</b>
+• <b>Total Targets:</b> ${summary.total}
+• <b>Successfully Sent:</b> <b>${summary.sent}</b>
+${summary.failed > 0 ? `• <b>Failed:</b> ${summary.failed}\n` : ''}
+<b>Delivered To:</b>
+${recipientLines}
+${errorLines}
+🛡 <i>Formatted with official high-speed pass layout and strict zero-outsider sharing guidelines.</i>
+`;
+
+    const kb = new InlineKeyboard()
+      .text('📶 WiFi Menu', 'menu_wifi')
+      .text('🔙 Main Menu', 'menu_main');
+
+    await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, finalText, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    console.error('wifi_share_broadcast error:', err);
+    await ctx.reply(`❌ Broadcast failed: ${err.message}`, {
+      reply_markup: new InlineKeyboard().text('🔙 Back to WiFi Menu', 'menu_wifi'),
+    });
   }
 });
 
