@@ -255,6 +255,7 @@ export const useStudyLoungeStore = create<StudyLoungeState>()(
       updateStudent: (id, data) => {
         let updatedStudent: Student | null = null
         set((state) => {
+          const oldStudent = state.students.find((s) => s.id === id)
           const updated = state.students.map((student) => {
             if (student.id !== id) return student
 
@@ -275,7 +276,51 @@ export const useStudyLoungeStore = create<StudyLoungeState>()(
             updatedStudent = finalObj
             return finalObj
           })
-          return { students: updated }
+
+          // Sync seats state in memory
+          let newSeats = state.seats
+          if (data.fullName || data.seatNumber !== undefined) {
+            newSeats = state.seats.map((seat) => {
+              // If student seat changed, free old seat
+              if (
+                data.seatNumber !== undefined &&
+                oldStudent?.seatNumber === seat.seatNumber &&
+                data.seatNumber !== seat.seatNumber
+              ) {
+                return {
+                  ...seat,
+                  status: 'available' as const,
+                  currentStudentId: undefined,
+                  currentStudentName: undefined,
+                  shift: undefined,
+                }
+              }
+              // If seat matches student's assigned seat
+              if (
+                seat.currentStudentId === id ||
+                (data.seatNumber && seat.seatNumber === data.seatNumber)
+              ) {
+                return {
+                  ...seat,
+                  status: 'occupied' as const,
+                  currentStudentId: id,
+                  currentStudentName: data.fullName || oldStudent?.fullName || seat.currentStudentName,
+                  shift: data.shift || oldStudent?.shift || seat.shift,
+                }
+              }
+              return seat
+            })
+          }
+
+          // Sync transaction student names if full name changed
+          let newTransactions = state.transactions
+          if (data.fullName) {
+            newTransactions = state.transactions.map((t) =>
+              t.studentId === id ? { ...t, studentName: data.fullName! } : t
+            )
+          }
+
+          return { students: updated, seats: newSeats, transactions: newTransactions }
         })
 
         if (supabaseService.isEnabled() && updatedStudent) {
