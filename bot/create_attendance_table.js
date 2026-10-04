@@ -3,7 +3,11 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:aT2iH2xPGENELiPo@db.zjiwelixfwvssgbuldsn.supabase.co:5432/postgres';
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('Error: DATABASE_URL is not set in environment.');
+  process.exit(1);
+}
 
 async function migrate() {
   const client = new Client({ connectionString, ssl: { rejectUnauthorized: false } });

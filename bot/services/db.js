@@ -4,8 +4,8 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 require('dotenv').config();
 const { getISTTime, getISTDate, getISTDateString } = require('./time');
 
-const supabaseUrl = process.env.SUPABASE_URL || 'https://zjiwelixfwvssgbuldsn.supabase.co';
-const supabaseKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqaXdlbGl4Znd2c3NnYnVsZHNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3ODA1NTEsImV4cCI6MjEwNjM1NjU1MX0.4nV6j8Ct-YglrUArkmwBOLNofxVG6kgQuefZxz3aM7A';
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 

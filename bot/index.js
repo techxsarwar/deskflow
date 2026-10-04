@@ -12,8 +12,8 @@ const { getISTTime, getISTDate, getISTDateString } = require('./services/time');
 
 // Configuration
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-let ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID ? parseInt(process.env.ADMIN_CHAT_ID, 10) : 8707444480;
-const WEB_APP_URL = process.env.WEB_APP_URL || 'https://deskflow-fyp9.onrender.com';
+let ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID ? parseInt(process.env.ADMIN_CHAT_ID, 10) : 0;
+const WEB_APP_URL = process.env.WEB_APP_URL || '';
 const PORT = process.env.PORT || 5001;
 
 if (!BOT_TOKEN) {
