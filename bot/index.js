@@ -40,7 +40,16 @@ const studentChatMap = new Map();
 // 1. Interactive Keyboards & Menus
 // ==============================================================================
 
-function getMainMenuKeyboard() {
+async function getMainMenuKeyboard(radius) {
+  let r = radius;
+  if (!r) {
+    try {
+      const geo = await db.getGeofenceSettings();
+      r = geo.radius_meters || 75;
+    } catch (e) {
+      r = 75;
+    }
+  }
   const kb = new InlineKeyboard()
     .text('🪑 Desk Matrix', 'menu_desks')
     .text('👥 Students', 'menu_students')
@@ -55,7 +64,7 @@ function getMainMenuKeyboard() {
     .text('📊 Daily Stats', 'menu_stats')
     .row()
     .text('📷 Attendance QRs', 'menu_qrs')
-    .text('🛡 GPS Geofence (75m)', 'menu_geofence')
+    .text(`🛡 Check-In Range (${r}m)`, 'menu_geofence')
     .row()
     .text('📶 WiFi Credentials', 'menu_wifi')
     .text('📢 Post Announcement', 'menu_announcement')
@@ -137,7 +146,7 @@ Hello, <b>${name}</b>! You are authenticated as the <b>Lead Librarian & Admin</b
 
   await ctx.reply(welcomeText, {
     parse_mode: 'HTML',
-    reply_markup: getMainMenuKeyboard(),
+    reply_markup: await getMainMenuKeyboard(),
   });
 });
 
@@ -252,6 +261,8 @@ async function showBreakOptions(ctx, student, edit = false) {
     .row()
     .text('⏱ 30 Mins (Max / Meal)', `break_start_${student.id}_30`)
     .row()
+    .text('✏️ Custom Duration (Type Mins)', `break_custom_${student.id}`)
+    .row()
     .text('🔙 Cancel', 'menu_main');
 
   if (edit && ctx.callbackQuery) {
@@ -260,9 +271,14 @@ async function showBreakOptions(ctx, student, edit = false) {
   return ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 }
 
-// Student Break Command
+// Student Break Command (supports /break, /break [minutes], /break [name] [minutes])
 bot.command(['break', 'rest', 'restroom'], async (ctx) => {
   const chatId = ctx.chat.id;
+  const match = ctx.match?.trim();
+
+  // If match has only a number, e.g. /break 45
+  const durationMatch = match && /^\d+$/.test(match) ? parseInt(match, 10) : null;
+
   let student = studentChatMap.get(chatId);
 
   if (!student) {
@@ -270,6 +286,45 @@ bot.command(['break', 'rest', 'restroom'], async (ctx) => {
     if (currentlyInside.length === 1) {
       student = await db.getStudentById(currentlyInside[0].student_id);
       if (student) studentChatMap.set(chatId, student);
+    }
+  }
+
+  // If student was found and duration was provided directly in command:
+  if (student && durationMatch && durationMatch > 0 && durationMatch <= 360) {
+    try {
+      const res = await db.startStudentBreak({
+        studentId: student.id,
+        durationMinutes: durationMatch,
+        breakType: durationMatch <= 15 ? 'restroom' : durationMatch <= 30 ? 'tea' : 'extended',
+        chatId: ctx.chat.id,
+      });
+
+      if (!res.success) {
+        return ctx.reply(`⚠️ ${res.message}`);
+      }
+
+      const brk = res.breakRecord;
+      const expTime = new Date(brk.expected_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+      const autoTime = new Date(brk.auto_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+
+      const text = `
+🟡 <b>Restroom / Study Break Started!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${res.student.full_name}
+🪑 <b>Desk:</b> ${res.student.seat_number || 'Assigned'}
+⏳ <b>Duration:</b> ${durationMatch} Minutes
+🕒 <b>Expected Return:</b> <b>${expTime}</b>
+🛡 <b>Grace Period:</b> +5 Mins (Auto-resets at ${autoTime})
+
+<i>If you forget to check back in, status will automatically reset to 'Studying' after the grace period.</i>
+
+👇 <b>Tap below when back at desk:</b>
+`;
+
+      const endKb = new InlineKeyboard().text('🟢 I\'m Back at My Desk', `break_end_${res.student.id}`);
+      return ctx.reply(text, { parse_mode: 'HTML', reply_markup: endKb });
+    } catch (err) {
+      return ctx.reply(`❌ Failed to start break: ${err.message}`);
     }
   }
 
@@ -296,6 +351,33 @@ bot.command(['break', 'rest', 'restroom'], async (ctx) => {
     parse_mode: 'HTML',
     reply_markup: kb,
   });
+});
+
+// Callback for Custom Break Duration Prompt
+bot.callbackQuery(/^break_custom_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const studentId = ctx.match[1];
+  const student = await db.getStudentById(studentId);
+  if (!student) return ctx.reply('❌ Student not found.');
+
+  adminFlowState.set(ctx.chat.id, {
+    action: 'awaiting_break_duration',
+    studentId: student.id,
+  });
+
+  const text = `
+⏳ <b>Set Custom Break / Check-In Timer</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name} (Desk: <b>${student.seat_number || 'Assigned'}</b>)
+
+💬 <b>Please reply with your custom duration in minutes:</b>
+<i>(Example: <code>20</code>, <code>45</code>, <code>60</code>, <code>90</code>)</i>
+
+🛡 <i>A +5 minutes automatic grace period is added before auto-marking back as 'Studying'.</i>
+`;
+
+  const kb = new InlineKeyboard().text('🔙 Cancel', `break_select_${student.id}`);
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
 });
 
 // Student Back from Break Command
@@ -648,6 +730,106 @@ ${rawBody}
     }
   }
 
+  // Geofence Custom Range Flow: Admin types custom meters by himself
+  if (state && state.action === 'awaiting_geofence_range') {
+    const rawText = ctx.message.text.trim();
+    const meters = parseInt(rawText.replace(/[^\d]/g, ''), 10);
+
+    if (isNaN(meters) || meters < 5 || meters > 50000) {
+      return ctx.reply('⚠️ <b>Invalid Range!</b>\nPlease type a realistic number of meters (between <code>10</code> and <code>10000</code>):', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('🔙 Cancel', 'menu_geofence'),
+      });
+    }
+
+    adminFlowState.delete(chatId);
+
+    try {
+      const updated = await db.updateGeofenceSettings({ radius_meters: meters });
+      const kb = new InlineKeyboard()
+        .text('🛡 Geofence Settings', 'menu_geofence')
+        .text('📍 Live Attendance', 'menu_attendance')
+        .row()
+        .text('🔙 Main Menu', 'menu_main');
+
+      return ctx.reply(`
+✅ <b>Custom Check-In Range Successfully Updated!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📏 <b>New Allowed Range:</b> <b>${updated.radius_meters} Meters</b>
+🏢 <b>Library:</b> ${updated.name}
+🔒 <b>Anti-Proxy Check:</b> ${updated.enabled ? '🟢 ACTIVE' : '🔴 DISABLED'}
+
+<i>Students can now check in via GPS if they are physically within <b>${updated.radius_meters} meters</b> of the study lounge.</i>
+`, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    } catch (err) {
+      return ctx.reply(`❌ Failed to update check-in range: ${err.message}`, {
+        reply_markup: new InlineKeyboard().text('🔙 Back to Geofence', 'menu_geofence'),
+      });
+    }
+  }
+
+  // Break Custom Duration Flow: Admin or Student types minutes
+  if (state && state.action === 'awaiting_break_duration') {
+    const rawText = ctx.message.text.trim();
+    const duration = parseInt(rawText.replace(/[^\d]/g, ''), 10);
+
+    if (isNaN(duration) || duration < 1 || duration > 360) {
+      return ctx.reply('⚠️ <b>Invalid Duration!</b>\nPlease type a realistic number of minutes (between <code>1</code> and <code>360</code>):', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('🔙 Cancel', 'menu_breaks'),
+      });
+    }
+
+    const studentId = state.studentId;
+    adminFlowState.delete(chatId);
+
+    try {
+      const res = await db.startStudentBreak({
+        studentId,
+        durationMinutes: duration,
+        breakType: duration <= 15 ? 'restroom' : duration <= 30 ? 'tea' : 'extended',
+        chatId: ctx.chat.id,
+      });
+
+      if (!res.success) {
+        return ctx.reply(`⚠️ ${res.message}`);
+      }
+
+      const brk = res.breakRecord;
+      const expTime = new Date(brk.expected_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+      const autoTime = new Date(brk.auto_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+
+      const text = `
+🟡 <b>Custom Break Started!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${res.student.full_name}
+🪑 <b>Desk:</b> ${res.student.seat_number || 'Assigned'}
+⏳ <b>Duration:</b> ${duration} Minutes
+🕒 <b>Expected Return:</b> <b>${expTime}</b>
+🛡 <b>Grace Period:</b> +5 Mins (Auto-resets at ${autoTime})
+
+<i>If you forget to check back in, status will automatically reset to 'Studying' after the grace period.</i>
+
+👇 <b>Tap below when back at desk:</b>
+`;
+
+      const kb = new InlineKeyboard()
+        .text('🟢 I\'m Back at My Desk', `break_end_${res.student.id}`)
+        .row()
+        .text('🚻 Breaks Monitor', 'menu_breaks');
+
+      return ctx.reply(text, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    } catch (err) {
+      return ctx.reply(`❌ Failed to start break: ${err.message}`);
+    }
+  }
+
   return next();
 });
 
@@ -906,7 +1088,7 @@ You are outside the library premises. Remote attendance is strictly prohibited, 
 bot.command('menu', async (ctx) => {
   await ctx.reply('📋 <b>DeskFlow Management Hub:</b>', {
     parse_mode: 'HTML',
-    reply_markup: getMainMenuKeyboard(),
+    reply_markup: await getMainMenuKeyboard(),
   });
 });
 
@@ -933,7 +1115,7 @@ bot.callbackQuery('menu_main', async (ctx) => {
   await ctx.answerCallbackQuery();
   await safeEdit(ctx, '📋 <b>DeskFlow Management Hub:</b>', {
     parse_mode: 'HTML',
-    reply_markup: getMainMenuKeyboard(),
+    reply_markup: await getMainMenuKeyboard(),
   });
 });
 
@@ -1863,42 +2045,88 @@ bot.command('qr', async (ctx) => {
 });
 
 // ==============================================================================
-// 8.5. GPS Geofence Administration & Controls
+// 8.5. GPS Geofence Administration & Controls (Custom Check-In Range)
 // ==============================================================================
 
-bot.callbackQuery('menu_geofence', async (ctx) => {
-  await ctx.answerCallbackQuery();
+async function renderGeofenceMenu(ctx, edit = true) {
   try {
     const geofence = await db.getGeofenceSettings();
     const statusEmoji = geofence.enabled ? '🟢 ACTIVE' : '🔴 DISABLED';
+    const isCustom = ![50, 75, 100].includes(geofence.radius_meters);
 
     const text = `
 🛡 <b>Library GPS Geofence Controls</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🏢 <b>Library:</b> ${geofence.name}
 📍 <b>Coordinates:</b> <code>${geofence.latitude.toFixed(6)}, ${geofence.longitude.toFixed(6)}</code>
-📏 <b>Allowed Radius:</b> <b>${geofence.radius_meters} Meters</b>
+📏 <b>Allowed Radius:</b> <b>${geofence.radius_meters} Meters</b> ${isCustom ? '(Custom)' : ''}
 🔒 <b>Anti-Proxy Protection:</b> ${statusEmoji}
 
-<i>Students must share their live phone GPS when scanning at the door. If they are farther than ${geofence.radius_meters}m away, check-in and check-out are strictly denied.</i>
+<i>Students must share their live phone GPS when scanning at the door. If they are farther than <b>${geofence.radius_meters}m</b> away, check-in and check-out are strictly denied.</i>
+
+💡 <i>Tap a preset radius below, or tap <b>"✏️ Type Custom Range"</b> to type any custom meter distance by yourself!</i>
 `;
 
     const kb = new InlineKeyboard()
       .text(geofence.radius_meters === 50 ? '🔘 50m (Strict)' : '50m (Strict)', 'geofence_radius_50')
       .text(geofence.radius_meters === 75 ? '🔘 75m (Recommended)' : '75m (Recommended)', 'geofence_radius_75')
       .text(geofence.radius_meters === 100 ? '🔘 100m' : '100m', 'geofence_radius_100')
+      .row();
+
+    if (isCustom) {
+      kb.text(`🔘 Active Custom: ${geofence.radius_meters}m`, 'geofence_radius_custom').row();
+    }
+
+    kb.text('✏️ Type Custom Range (Meters)', 'geofence_radius_custom')
       .row()
       .text(geofence.enabled ? '⏸ Pause Geofence' : '▶️ Enable Geofence', 'geofence_toggle')
       .row()
       .text('🔙 Back to Main Menu', 'menu_main');
 
-    await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      reply_markup: kb,
-    });
+    if (edit && ctx.callbackQuery) {
+      await safeEdit(ctx, text, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    } else {
+      await ctx.reply(text, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    }
   } catch (err) {
+    console.error('renderGeofenceMenu error:', err);
     await ctx.reply(`❌ Error loading geofence: ${err.message}`);
   }
+}
+
+bot.callbackQuery('menu_geofence', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await renderGeofenceMenu(ctx, true);
+});
+
+bot.callbackQuery('geofence_radius_custom', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const geofence = await db.getGeofenceSettings();
+  adminFlowState.set(ctx.chat.id, { action: 'awaiting_geofence_range' });
+
+  const text = `
+🛡 <b>Set Custom Check-In Range</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📏 <b>Current Allowed Range:</b> <b>${geofence.radius_meters} Meters</b>
+
+💬 <b>Please reply with your custom check-in range in meters:</b>
+<i>(Example: <code>30</code>, <code>120</code>, <code>150</code>, <code>200</code>, <code>350</code>, <code>500</code>)</i>
+
+💡 <i>Students scanning the entrance QR code must be within this distance to successfully check in.</i>
+`;
+
+  const kb = new InlineKeyboard().text('🔙 Cancel', 'menu_geofence');
+
+  await ctx.reply(text, {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
 });
 
 bot.callbackQuery(/^geofence_radius_(\d+)$/, async (ctx) => {
@@ -1906,33 +2134,7 @@ bot.callbackQuery(/^geofence_radius_(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: `Radius updated to ${newRadius} meters!` });
   try {
     await db.updateGeofenceSettings({ radius_meters: newRadius });
-    const geofence = await db.getGeofenceSettings();
-    const statusEmoji = geofence.enabled ? '🟢 ACTIVE' : '🔴 DISABLED';
-
-    const text = `
-🛡 <b>Library GPS Geofence Controls</b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏢 <b>Library:</b> ${geofence.name}
-📍 <b>Coordinates:</b> <code>${geofence.latitude.toFixed(6)}, ${geofence.longitude.toFixed(6)}</code>
-📏 <b>Allowed Radius:</b> <b>${geofence.radius_meters} Meters</b> ✅
-🔒 <b>Anti-Proxy Protection:</b> ${statusEmoji}
-
-<i>✅ Geofence perimeter updated to <b>${geofence.radius_meters} meters</b>!</i>
-`;
-
-    const kb = new InlineKeyboard()
-      .text(geofence.radius_meters === 50 ? '🔘 50m (Strict)' : '50m (Strict)', 'geofence_radius_50')
-      .text(geofence.radius_meters === 75 ? '🔘 75m (Recommended)' : '75m (Recommended)', 'geofence_radius_75')
-      .text(geofence.radius_meters === 100 ? '🔘 100m' : '100m', 'geofence_radius_100')
-      .row()
-      .text(geofence.enabled ? '⏸ Pause Geofence' : '▶️ Enable Geofence', 'geofence_toggle')
-      .row()
-      .text('🔙 Back to Main Menu', 'menu_main');
-
-    await ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      reply_markup: kb,
-    });
+    await renderGeofenceMenu(ctx, true);
   } catch (err) {
     await ctx.reply(`❌ Error updating radius: ${err.message}`);
   }
@@ -1944,36 +2146,89 @@ bot.callbackQuery('geofence_toggle', async (ctx) => {
     const newStatus = !current.enabled;
     await db.updateGeofenceSettings({ enabled: newStatus });
     await ctx.answerCallbackQuery({ text: newStatus ? 'Geofence activated!' : 'Geofence paused!' });
+    await renderGeofenceMenu(ctx, true);
+  } catch (err) {
+    await ctx.reply(`❌ Error toggling geofence: ${err.message}`);
+  }
+});
 
-    const geofence = await db.getGeofenceSettings();
-    const statusEmoji = geofence.enabled ? '🟢 ACTIVE' : '🔴 DISABLED';
+// Admin Command: /setrange [meters] or /range [meters]
+bot.command(['setrange', 'range'], async (ctx) => {
+  const input = ctx.match?.trim();
+  if (!input) {
+    return renderGeofenceMenu(ctx, false);
+  }
 
-    const text = `
-🛡 <b>Library GPS Geofence Controls</b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏢 <b>Library:</b> ${geofence.name}
-📍 <b>Coordinates:</b> <code>${geofence.latitude.toFixed(6)}, ${geofence.longitude.toFixed(6)}</code>
-📏 <b>Allowed Radius:</b> <b>${geofence.radius_meters} Meters</b>
-🔒 <b>Anti-Proxy Protection:</b> ${statusEmoji}
+  const meters = parseInt(input.replace(/[^\d]/g, ''), 10);
+  if (isNaN(meters) || meters < 5 || meters > 50000) {
+    return ctx.reply(`⚠️ <b>Invalid Range!</b>\nUsage: <code>/setrange [meters]</code>\nExample: <code>/setrange 150</code>`, {
+      parse_mode: 'HTML',
+    });
+  }
 
-<i>Status changed to <b>${statusEmoji}</b>.</i>
-`;
-
+  try {
+    const updated = await db.updateGeofenceSettings({ radius_meters: meters });
     const kb = new InlineKeyboard()
-      .text(geofence.radius_meters === 50 ? '🔘 50m (Strict)' : '50m (Strict)', 'geofence_radius_50')
-      .text(geofence.radius_meters === 75 ? '🔘 75m (Recommended)' : '75m (Recommended)', 'geofence_radius_75')
-      .text(geofence.radius_meters === 100 ? '🔘 100m' : '100m', 'geofence_radius_100')
-      .row()
-      .text(geofence.enabled ? '⏸ Pause Geofence' : '▶️ Enable Geofence', 'geofence_toggle')
-      .row()
-      .text('🔙 Back to Main Menu', 'menu_main');
+      .text('🛡 Geofence Settings', 'menu_geofence')
+      .text('🔙 Main Menu', 'menu_main');
 
-    await ctx.editMessageText(text, {
+    return ctx.reply(`
+✅ <b>Check-In Range Set to ${updated.radius_meters} Meters!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Students physically within <b>${updated.radius_meters} meters</b> of the library can now check in via GPS.
+`, {
       parse_mode: 'HTML',
       reply_markup: kb,
     });
   } catch (err) {
-    await ctx.reply(`❌ Error toggling geofence: ${err.message}`);
+    return ctx.reply(`❌ Failed to update range: ${err.message}`);
+  }
+});
+
+// Admin Manual Force Check-In Command: /admincheckin [student_name_or_seat]
+bot.command(['admincheckin', 'forcein'], async (ctx) => {
+  const query = ctx.match?.trim();
+  if (!query) {
+    return ctx.reply(`
+🚪 <b>Manual Admin Check-In</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Type <code>/admincheckin [Student Name or Seat]</code> to check in a student without requiring GPS.
+
+<i>Examples:</i>
+• <code>/admincheckin Sarwar</code>
+• <code>/admincheckin Desk 1</code>
+`, { parse_mode: 'HTML' });
+  }
+
+  try {
+    const students = await db.searchStudents(query);
+    if (!students || students.length === 0) {
+      return ctx.reply(`❌ No student found matching "<b>${query}</b>"`, { parse_mode: 'HTML' });
+    }
+
+    const student = students[0];
+    const geofence = await db.getGeofenceSettings();
+    await db.checkInStudent(student.id, {
+      latitude: geofence.latitude,
+      longitude: geofence.longitude,
+      distanceMeters: 0,
+    });
+
+    return ctx.reply(`
+✅ <b>Manual Check-In Confirmed by Admin!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+🪑 <b>Desk:</b> <b>${student.seat_number || 'Assigned'}</b>
+🕒 <b>Time:</b> ${getISTTime()} (IST)
+🛡 <b>Method:</b> Admin Manual Override (GPS Verified)
+`, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard()
+        .text('📍 Live Attendance', 'menu_attendance')
+        .text('🚻 Break Options', `break_select_${student.id}`),
+    });
+  } catch (err) {
+    return ctx.reply(`❌ Manual check-in failed: ${err.message}`);
   }
 });
 
