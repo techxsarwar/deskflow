@@ -47,6 +47,7 @@ function getMainMenuKeyboard() {
     .text('📷 Attendance QRs', 'menu_qrs')
     .row()
     .text('🛡 GPS Geofence (75m)', 'menu_geofence')
+    .text('📜 Rules & Legal Terms', 'menu_rules')
     .row();
 
   if (WEB_APP_URL) {
@@ -181,6 +182,48 @@ bot.command('checkout', async (ctx) => {
   await ctx.reply(`🚪 <b>Exit Check-Out:</b> Tap below to log out and record hours:`, {
     parse_mode: 'HTML',
     reply_markup: contactKb,
+  });
+});
+
+// Student & Member Legal Rules, Privacy & Safety Disclaimers
+bot.command(['rules', 'policy', 'terms'], async (ctx) => {
+  const geofence = await db.getGeofenceSettings();
+  const legalText = `
+📜 <b>Vertical Classes Library — Rules & Legal Terms</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+All members and applicants must adhere to our operational, attendance, and safety policies:
+
+🔕 <b>1. Reading Hall Silence:</b>
+• Pin-drop silence is mandatory in study halls.
+• Keep mobile phones on <b>Silent / Vibration-off</b> mode.
+• Phone calls are permitted only outside in the reception foyer.
+
+📍 <b>2. Geofenced Attendance (${geofence.radius_meters}m Perimeter):</b>
+• Check-In & Check-Out require sharing your device GPS location.
+• You must be physically inside or within <b>${geofence.radius_meters}m</b> of the library (<code>${geofence.latitude}, ${geofence.longitude}</code>).
+• Remote attendance from home or outside is strictly blocked and flagged.
+
+⚖️ <b>3. Off-Premises Non-Liability Disclaimer:</b>
+• The library is strictly a private study space provider.
+• Management holds <b>NO custody, supervisory, or legal responsibility</b> for any student when outside library premises or during transit.
+• If remote check-in is attempted, automated alerts notify parents and administration immediately.
+
+💳 <b>4. Strict No-Refund Policy:</b>
+• All membership fees, deposits, and locker rentals are strictly <b>non-refundable and non-transferable</b>.
+
+👇 <i>Tap below to review the official web documents:</i>
+`;
+
+  const kb = new InlineKeyboard();
+  if (WEB_APP_URL) {
+    kb.url('📜 View Terms of Service', `${WEB_APP_URL}/terms`).row();
+    kb.url('🔒 View Privacy & GPS Policy', `${WEB_APP_URL}/privacy`).row();
+  }
+  kb.text('🔙 Back to Main Menu', 'menu_main');
+
+  await ctx.reply(legalText, {
+    parse_mode: 'HTML',
+    reply_markup: kb,
   });
 });
 
@@ -513,6 +556,49 @@ bot.callbackQuery('menu_main', async (ctx) => {
   await safeEdit(ctx, '📋 <b>DeskFlow Management Hub:</b>', {
     parse_mode: 'HTML',
     reply_markup: getMainMenuKeyboard(),
+  });
+});
+
+// Callback Query: Rules & Legal Terms
+bot.callbackQuery('menu_rules', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const geofence = await db.getGeofenceSettings();
+  const legalText = `
+📜 <b>Vertical Classes Library — Rules & Legal Terms</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+All members and applicants must adhere to our operational, attendance, and safety policies:
+
+🔕 <b>1. Reading Hall Silence:</b>
+• Pin-drop silence is mandatory in study halls.
+• Keep mobile phones on <b>Silent / Vibration-off</b> mode.
+• Phone calls are permitted only outside in the reception foyer.
+
+📍 <b>2. Geofenced Attendance (${geofence.radius_meters}m Perimeter):</b>
+• Check-In & Check-Out require sharing your device GPS location.
+• You must be physically inside or within <b>${geofence.radius_meters}m</b> of the library (<code>${geofence.latitude}, ${geofence.longitude}</code>).
+• Remote attendance from home or outside is strictly blocked and flagged.
+
+⚖️ <b>3. Off-Premises Non-Liability Disclaimer:</b>
+• The library is strictly a private study space provider.
+• Management holds <b>NO custody, supervisory, or legal responsibility</b> for any student when outside library premises or during transit.
+• If remote check-in is attempted, automated alerts notify parents and administration immediately.
+
+💳 <b>4. Strict No-Refund Policy:</b>
+• All membership fees, deposits, and locker rentals are strictly <b>non-refundable and non-transferable</b>.
+
+👇 <i>Tap below to review the official web documents:</i>
+`;
+
+  const kb = new InlineKeyboard();
+  if (WEB_APP_URL) {
+    kb.url('📜 View Terms of Service', `${WEB_APP_URL}/terms`).row();
+    kb.url('🔒 View Privacy & GPS Policy', `${WEB_APP_URL}/privacy`).row();
+  }
+  kb.text('🔙 Back to Main Menu', 'menu_main');
+
+  await safeEdit(ctx, legalText, {
+    parse_mode: 'HTML',
+    reply_markup: kb,
   });
 });
 

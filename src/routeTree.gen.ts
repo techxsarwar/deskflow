@@ -9,7 +9,10 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as RegisterStudentRouteImport } from './routes/register-student'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as LegalRouteImport } from './routes/legal'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as JionRouteImport } from './routes/jion'
 import { Route as ClerkRouteRouteImport } from './routes/clerk/route'
@@ -46,9 +49,24 @@ import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_a
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterStudentRoute = RegisterStudentRouteImport.update({
   id: '/register-student',
   path: '/register-student',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalRoute = LegalRouteImport.update({
+  id: '/legal',
+  path: '/legal',
   getParentRoute: () => rootRouteImport,
 } as any)
 const JoinRoute = JoinRouteImport.update({
@@ -239,7 +257,10 @@ export interface FileRoutesByFullPath {
   '/clerk': typeof ClerkAuthenticatedRouteRouteWithChildren
   '/jion': typeof JionRoute
   '/join': typeof JoinRoute
+  '/legal': typeof LegalRoute
+  '/privacy': typeof PrivacyRoute
   '/register-student': typeof RegisterStudentRoute
+  '/terms': typeof TermsRoute
   '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/forgot-password': typeof authForgotPasswordRoute
   '/otp': typeof authOtpRoute
@@ -273,7 +294,10 @@ export interface FileRoutesByTo {
   '/clerk': typeof ClerkAuthenticatedRouteRouteWithChildren
   '/jion': typeof JionRoute
   '/join': typeof JoinRoute
+  '/legal': typeof LegalRoute
+  '/privacy': typeof PrivacyRoute
   '/register-student': typeof RegisterStudentRoute
+  '/terms': typeof TermsRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/otp': typeof authOtpRoute
   '/sign-in': typeof authSignInRoute
@@ -309,7 +333,10 @@ export interface FileRoutesById {
   '/clerk': typeof ClerkRouteRouteWithChildren
   '/jion': typeof JionRoute
   '/join': typeof JoinRoute
+  '/legal': typeof LegalRoute
+  '/privacy': typeof PrivacyRoute
   '/register-student': typeof RegisterStudentRoute
+  '/terms': typeof TermsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
   '/clerk/(auth)': typeof ClerkauthRouteRouteWithChildren
   '/clerk/_authenticated': typeof ClerkAuthenticatedRouteRouteWithChildren
@@ -349,7 +376,10 @@ export interface FileRouteTypes {
     | '/clerk'
     | '/jion'
     | '/join'
+    | '/legal'
+    | '/privacy'
     | '/register-student'
+    | '/terms'
     | '/settings'
     | '/forgot-password'
     | '/otp'
@@ -383,7 +413,10 @@ export interface FileRouteTypes {
     | '/clerk'
     | '/jion'
     | '/join'
+    | '/legal'
+    | '/privacy'
     | '/register-student'
+    | '/terms'
     | '/forgot-password'
     | '/otp'
     | '/sign-in'
@@ -418,7 +451,10 @@ export interface FileRouteTypes {
     | '/clerk'
     | '/jion'
     | '/join'
+    | '/legal'
+    | '/privacy'
     | '/register-student'
+    | '/terms'
     | '/_authenticated/settings'
     | '/clerk/(auth)'
     | '/clerk/_authenticated'
@@ -457,7 +493,10 @@ export interface RootRouteChildren {
   ClerkRouteRoute: typeof ClerkRouteRouteWithChildren
   JionRoute: typeof JionRoute
   JoinRoute: typeof JoinRoute
+  LegalRoute: typeof LegalRoute
+  PrivacyRoute: typeof PrivacyRoute
   RegisterStudentRoute: typeof RegisterStudentRoute
+  TermsRoute: typeof TermsRoute
   authForgotPasswordRoute: typeof authForgotPasswordRoute
   authOtpRoute: typeof authOtpRoute
   authSignInRoute: typeof authSignInRoute
@@ -472,11 +511,32 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register-student': {
       id: '/register-student'
       path: '/register-student'
       fullPath: '/register-student'
       preLoaderRoute: typeof RegisterStudentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal': {
+      id: '/legal'
+      path: '/legal'
+      fullPath: '/legal'
+      preLoaderRoute: typeof LegalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/join': {
@@ -829,7 +889,10 @@ const rootRouteChildren: RootRouteChildren = {
   ClerkRouteRoute: ClerkRouteRouteWithChildren,
   JionRoute: JionRoute,
   JoinRoute: JoinRoute,
+  LegalRoute: LegalRoute,
+  PrivacyRoute: PrivacyRoute,
   RegisterStudentRoute: RegisterStudentRoute,
+  TermsRoute: TermsRoute,
   authForgotPasswordRoute: authForgotPasswordRoute,
   authOtpRoute: authOtpRoute,
   authSignInRoute: authSignInRoute,

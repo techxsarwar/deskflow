@@ -18,6 +18,8 @@ import {
   Camera,
   Upload,
   Loader2,
+  Scale,
+  ExternalLink,
 } from 'lucide-react'
 import { supabaseService } from '@/features/study-lounge/lib/supabase-service'
 import { getDeskDisplayNumber, getDeskFullLabel, sortSeatsNaturally } from '@/features/study-lounge/lib/seat-utils'
@@ -327,6 +329,23 @@ export function PublicStudentRegistration() {
               </p>
               <p className='text-muted-foreground'>
                 3. Collect your RFID keycard, Wi-Fi credentials & locker key, complete your fee payment, and take your desk!
+              </p>
+            </div>
+
+            {/* Legal & Safety Compliance Disclosure */}
+            <div className='rounded-lg bg-muted/40 border border-border/50 p-3 text-[11px] text-muted-foreground space-y-1 leading-relaxed'>
+              <div className='flex items-center gap-1.5 font-semibold text-foreground text-xs'>
+                <Scale className='h-3.5 w-3.5 text-primary' />
+                <span>Student Undertaking & Legal Safety Terms:</span>
+              </div>
+              <p>
+                • <b>Attendance Geofencing:</b> Attendance check-in is permitted only within the 75m GPS perimeter of Vertical Classes Library. Remote attendance is blocked and logged.
+              </p>
+              <p>
+                • <b>Off-Premises Non-Liability:</b> The institution is strictly a self-study space provider and holds zero custody, supervisory, or legal liability for members outside library premises.
+              </p>
+              <p>
+                • <b>Fee Policy:</b> All fees, locker charges, and deposits are strictly non-refundable and non-transferable.
               </p>
             </div>
 
@@ -811,19 +830,83 @@ export function PublicStudentRegistration() {
                 </div>
               </div>
 
-              {/* Rules & Submit */}
-              <div className='space-y-4 pt-2 border-t'>
-                <div className='flex items-start space-x-2'>
+              {/* Rules, GPS Consent & Legal Submit */}
+              <div className='space-y-4 pt-3 border-t'>
+                <div className='rounded-xl border border-primary/20 bg-primary/5 p-3.5 space-y-2.5 text-xs'>
+                  <div className='flex items-center justify-between'>
+                    <span className='font-semibold text-foreground flex items-center gap-1.5'>
+                      <Scale className='h-4 w-4 text-primary' />
+                      Study Lounge Rules & Legal Terms
+                    </span>
+                    <a
+                      href='/terms'
+                      target='_blank'
+                      rel='noreferrer'
+                      className='inline-flex items-center gap-1 font-semibold text-primary hover:underline text-[11px]'
+                    >
+                      Read Full Policies
+                      <ExternalLink className='h-3 w-3' />
+                    </a>
+                  </div>
+                  <ul className='grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-muted-foreground text-[11px] leading-tight'>
+                    <li className='flex items-start gap-1.5'>
+                      <Check className='h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5' />
+                      <span><b>Strict Silence:</b> Phones on silent; zero reading room disturbance.</span>
+                    </li>
+                    <li className='flex items-start gap-1.5'>
+                      <Check className='h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5' />
+                      <span><b>75m GPS Geofence:</b> Attendance marks valid only inside library.</span>
+                    </li>
+                    <li className='flex items-start gap-1.5'>
+                      <Check className='h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5' />
+                      <span><b>Non-Liability:</b> Zero institutional custody/liability outside library.</span>
+                    </li>
+                    <li className='flex items-start gap-1.5'>
+                      <Check className='h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5' />
+                      <span><b>No Refunds:</b> Membership deposits are non-refundable/non-transferable.</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div className='flex items-start space-x-2.5'>
                   <Checkbox
                     id='rules'
                     checked={agreedToRules}
                     onCheckedChange={(c) => setAgreedToRules(!!c)}
+                    className='mt-0.5'
                   />
                   <Label
                     htmlFor='rules'
                     className='text-xs text-muted-foreground leading-relaxed cursor-pointer'
                   >
-                    I agree to maintain complete silence in the reading halls, keep mobile phones on silent/vibrate, and adhere to the Study Lounge code of conduct.
+                    I have read and agree to the{' '}
+                    <a
+                      href='/terms'
+                      target='_blank'
+                      rel='noreferrer'
+                      className='font-semibold text-foreground underline underline-offset-2 hover:text-primary'
+                    >
+                      Terms of Service
+                    </a>
+                    , agree to maintain complete silence, consent to the{' '}
+                    <a
+                      href='/privacy'
+                      target='_blank'
+                      rel='noreferrer'
+                      className='font-semibold text-foreground underline underline-offset-2 hover:text-primary'
+                    >
+                      Privacy & GPS Location Policy
+                    </a>{' '}
+                    for attendance verification, and acknowledge the{' '}
+                    <a
+                      href='/terms'
+                      target='_blank'
+                      rel='noreferrer'
+                      className='font-semibold text-foreground underline underline-offset-2 hover:text-primary'
+                    >
+                      Off-Premises Safety & Non-Liability Disclaimer
+                    </a>
+                    .
                   </Label>
                 </div>
 
