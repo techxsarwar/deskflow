@@ -20,7 +20,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { supabaseService } from '@/features/study-lounge/lib/supabase-service'
-import { getDeskDisplayNumber, getDeskFullLabel } from '@/features/study-lounge/lib/seat-utils'
+import { getDeskDisplayNumber, getDeskFullLabel, sortSeatsNaturally } from '@/features/study-lounge/lib/seat-utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -91,9 +91,11 @@ export function PublicStudentRegistration() {
       }
       map.get(hallName)!.push(seat)
     })
-    return Array.from(map.entries()).sort(([a], [b]) =>
-      a.localeCompare(b, undefined, { numeric: true })
-    )
+    return Array.from(map.entries())
+      .map(([hallName, hallSeats]) => [hallName, sortSeatsNaturally(hallSeats, hallName)] as [string, LoungeSeat[]])
+      .sort(([a], [b]) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+      )
   }, [seats])
 
   const totalVacant = seats.filter((s) => s.status === 'available').length

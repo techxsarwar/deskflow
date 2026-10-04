@@ -1,5 +1,6 @@
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
 import { Student, FeeTransaction, LoungeSeat } from '../types'
+import { sortSeatsNaturally } from './seat-utils'
 
 export const supabaseService = {
   // Check if Supabase client is ready and configured
@@ -315,7 +316,7 @@ export const supabaseService = {
         return null
       }
 
-      return (data || []).map((row: any) => ({
+      const mappedSeats: LoungeSeat[] = (data || []).map((row: any) => ({
         id: row.id,
         seatNumber: row.seat_number,
         type: row.type,
@@ -325,6 +326,8 @@ export const supabaseService = {
         currentStudentName: row.current_student_name || undefined,
         shift: row.shift || undefined,
       }))
+
+      return sortSeatsNaturally(mappedSeats)
     } catch (err) {
       console.error('Supabase fetchSeats exception:', err)
       return null

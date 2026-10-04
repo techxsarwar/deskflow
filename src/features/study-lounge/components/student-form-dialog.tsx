@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Camera, Loader2, Trash2, Upload, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -19,9 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Student, ShiftType, SeatType, MembershipPlan } from '../types'
+import { Student, ShiftType, SeatType, MembershipPlan, LoungeSeat } from '../types'
 import { PLAN_PRICING } from '../data/mock-data'
-import { getDeskFullLabel } from '../lib/seat-utils'
+import { getDeskFullLabel, sortSeatsNaturally } from '../lib/seat-utils'
 import { supabaseService } from '../lib/supabase-service'
 import { useStudyLoungeStore } from '../store/study-lounge-store'
 
@@ -175,9 +175,12 @@ export function StudentFormDialog({
     }))
   }
 
-  const availableSeats = seats.filter(
-    (s) => s.status === 'available' || (student && s.seatNumber === student.seatNumber)
-  )
+  const availableSeats = useMemo<LoungeSeat[]>(() => {
+    const filtered = seats.filter(
+      (s) => s.status === 'available' || (student && s.seatNumber === student.seatNumber)
+    )
+    return sortSeatsNaturally(filtered)
+  }, [seats, student])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -425,7 +428,7 @@ export function StudentFormDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value='Unassigned'>Unassigned / Flex</SelectItem>
-                    {availableSeats.map((seat) => (
+                    {availableSeats.map((seat: LoungeSeat) => (
                       <SelectItem key={seat.id} value={seat.seatNumber}>
                         {getDeskFullLabel(seat.seatNumber, seat.section)}
                       </SelectItem>

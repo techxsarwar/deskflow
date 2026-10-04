@@ -49,3 +49,36 @@ export function getDeskFullLabel(seatNumber: string, hallName?: string): string 
   }
   return label
 }
+
+/**
+ * Sorts seats array in natural numerical order based on their desk number.
+ * e.g., 1, 2, 3, 4 ... 9, 10, 11 ... 29, 30 (instead of lexicographical 1, 10, 11, ... 2, 20)
+ */
+export function sortSeatsNaturally<T extends { seatNumber: string; section?: string }>(
+  seats: T[],
+  hallName?: string
+): T[] {
+  return [...seats].sort((a, b) => {
+    // First, sort by section/hall if different
+    const secA = (a.section || '').trim()
+    const secB = (b.section || '').trim()
+    if (secA && secB && secA.toLowerCase() !== secB.toLowerCase()) {
+      return secA.localeCompare(secB, undefined, { numeric: true, sensitivity: 'base' })
+    }
+
+    const numStrA = getDeskDisplayNumber(a.seatNumber, hallName || a.section)
+    const numStrB = getDeskDisplayNumber(b.seatNumber, hallName || b.section)
+
+    const intA = parseInt(numStrA, 10)
+    const intB = parseInt(numStrB, 10)
+
+    if (!isNaN(intA) && !isNaN(intB)) {
+      if (intA !== intB) {
+        return intA - intB
+      }
+    }
+
+    return numStrA.localeCompare(numStrB, undefined, { numeric: true, sensitivity: 'base' })
+  })
+}
+

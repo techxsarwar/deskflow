@@ -1,6 +1,6 @@
 import { FeeTransaction, Student, LoungeSeat } from '../types'
 import { SHIFT_DETAILS } from '../data/mock-data'
-import { getDeskLabel } from './seat-utils'
+import { getDeskLabel, sortSeatsNaturally } from './seat-utils'
 
 /**
  * Normalizes an Indian or international phone number for WhatsApp URLs.
@@ -345,7 +345,9 @@ export function buildSeatingArrangementBroadcastMessage({
     const sectionOccupied = seatsList.filter((s) => s.status === 'occupied').length
     const sectionTotal = seatsList.length
 
-    const seatLines = seatsList.map((seat) => {
+    const sortedSeatsList = sortSeatsNaturally(seatsList, sectionName)
+
+    const seatLines = sortedSeatsList.map((seat) => {
       const student =
         studentBySeatNumber.get(seat.seatNumber) ||
         (seat.currentStudentId

@@ -22,7 +22,7 @@ import { LoungeSeat, Student } from '../types'
 import { useStudyLoungeStore } from '../store/study-lounge-store'
 import { SHIFT_DETAILS } from '../data/mock-data'
 import { getMembershipLifecycle } from '../lib/membership-utils'
-import { getDeskDisplayNumber, getDeskFullLabel, getDeskLabel } from '../lib/seat-utils'
+import { getDeskDisplayNumber, getDeskFullLabel, getDeskLabel, sortSeatsNaturally } from '../lib/seat-utils'
 import { AddSeatDialog } from './add-seat-dialog'
 import { ShareSeatingDialog } from './share-seating-dialog'
 import { RenewMembershipDialog } from './renew-membership-dialog'
@@ -51,9 +51,11 @@ export function SeatsLayoutView() {
       }
       map.get(hallName)!.push(seat)
     })
-    return Array.from(map.entries()).sort(([a], [b]) =>
-      a.localeCompare(b, undefined, { numeric: true })
-    )
+    return Array.from(map.entries())
+      .map(([hallName, hallSeats]) => [hallName, sortSeatsNaturally(hallSeats, hallName)] as [string, LoungeSeat[]])
+      .sort(([a], [b]) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+      )
   }, [seats])
 
   const totalSeats = seats.length
