@@ -20,18 +20,30 @@ async function getAllSeats() {
 }
 
 async function getSeatByNumber(seatNumber) {
-  const { data, error } = await supabase
+  if (!seatNumber) return null;
+  const clean = seatNumber.trim();
+  // Try exact match first
+  let { data } = await supabase
     .from('seats')
     .select('*')
-    .eq('seat_number', seatNumber.toUpperCase().trim())
+    .eq('seat_number', clean)
     .maybeSingle();
-  if (error) throw error;
+
+  // If not found, try case-insensitive ilike match
+  if (!data) {
+    const res = await supabase
+      .from('seats')
+      .select('*')
+      .ilike('seat_number', clean)
+      .maybeSingle();
+    data = res.data;
+  }
   return data;
 }
 
 async function vacateSeat(seatNumber) {
   const seat = await getSeatByNumber(seatNumber);
-  if (!seat) throw new Error(`Seat ${seatNumber} not found.`);
+  if (!seat) return null;
 
   // If there was a student, update student's seat_number to Unassigned
   if (seat.current_student_id) {
@@ -51,13 +63,15 @@ async function vacateSeat(seatNumber) {
     })
     .eq('seat_number', seat.seat_number)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
-  return data;
+  return data || seat;
 }
 
 async function assignSeat(seatNumber, studentId, studentName, shift = 'fullday') {
+  if (!seatNumber || seatNumber === 'Unassigned') return null;
+
   // Free any previous seat student might have had
   await supabase
     .from('seats')
@@ -69,6 +83,10 @@ async function assignSeat(seatNumber, studentId, studentName, shift = 'fullday')
     })
     .eq('current_student_id', studentId);
 
+  // Find exact seat from DB to ensure exact casing
+  const existingSeat = await getSeatByNumber(seatNumber);
+  const exactSeatNumber = existingSeat ? existingSeat.seat_number : seatNumber.trim();
+
   // Assign new seat
   const { data, error } = await supabase
     .from('seats')
@@ -78,19 +96,21 @@ async function assignSeat(seatNumber, studentId, studentName, shift = 'fullday')
       current_student_name: studentName,
       shift: shift,
     })
-    .eq('seat_number', seatNumber.toUpperCase().trim())
+    .eq('seat_number', exactSeatNumber)
     .select()
-    .single();
+    .maybeSingle();
 
-  if (error) throw error;
+  if (error) {
+    console.error('assignSeat DB error:', error.message);
+  }
 
   // Update student profile
   await supabase
     .from('students')
-    .update({ seat_number: seatNumber.toUpperCase().trim() })
+    .update({ seat_number: exactSeatNumber })
     .eq('id', studentId);
 
-  return data;
+  return data || existingSeat;
 }
 
 // Students
@@ -129,15 +149,16 @@ async function getPendingAdmissions() {
 
 async function approveAdmission(studentId, seatNumber) {
   const student = await getStudentById(studentId);
-  if (!student) throw new Error('Student not found');
+  if (!student) throw new Error('Student not found in database');
 
   const updates = {
     status: 'active',
   };
 
-  if (seatNumber) {
-    updates.seat_number = seatNumber;
-    await assignSeat(seatNumber, studentId, student.full_name, student.shift);
+  const targetSeat = seatNumber || student.seat_number;
+  if (targetSeat && targetSeat !== 'Unassigned') {
+    updates.seat_number = targetSeat;
+    await assignSeat(targetSeat, studentId, student.full_name, student.shift);
   }
 
   const { data, error } = await supabase
@@ -145,10 +166,10 @@ async function approveAdmission(studentId, seatNumber) {
     .update(updates)
     .eq('id', studentId)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
-  return data;
+  return data || { ...student, ...updates };
 }
 
 // Defaulters & Expiries

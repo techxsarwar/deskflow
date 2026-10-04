@@ -993,9 +993,13 @@ bot.callbackQuery(/^adm_approve_(.+)$/, async (ctx) => {
   const studentId = ctx.match[1];
   try {
     const student = await db.getStudentById(studentId);
-    await db.approveAdmission(studentId, student.seat_number !== 'Unassigned' ? student.seat_number : null);
+    if (!student) {
+      return ctx.reply('❌ Student not found in database.');
+    }
+    const approved = await db.approveAdmission(studentId, student.seat_number !== 'Unassigned' ? student.seat_number : null);
 
-    await ctx.editMessageText(`🎉 <b>Admission Approved for ${student.full_name}!</b>\nStudent is now active with seat <b>${student.seat_number}</b>.`, {
+    const seatNum = approved?.seat_number || student.seat_number || 'Unassigned';
+    await ctx.editMessageText(`🎉 <b>Admission Approved for ${student.full_name}!</b>\nStudent is now active with seat <b>${seatNum}</b>.`, {
       parse_mode: 'HTML',
       reply_markup: new InlineKeyboard()
         .text('💳 Collect Admission Fee', `fee_collect_${student.id}`)
@@ -1003,6 +1007,7 @@ bot.callbackQuery(/^adm_approve_(.+)$/, async (ctx) => {
         .text('🔙 Admissions Queue', 'menu_admissions'),
     });
   } catch (err) {
+    console.error('Bot approve admission error:', err);
     await ctx.reply(`❌ Error: ${err.message}`);
   }
 });
