@@ -105,7 +105,7 @@ export function LegalHub({ defaultTab = 'terms' }: LegalHubProps) {
             </span>
             <span className='flex items-center gap-1.5'>
               <ShieldCheck className='h-3.5 w-3.5 text-emerald-500' />
-              DeskFlow Compliance v2.4
+              India DPDP Act 2023 & IT Act 2000 Compliant
             </span>
           </div>
         </div>
@@ -399,6 +399,109 @@ export function LegalHub({ defaultTab = 'terms' }: LegalHubProps) {
                     databases (Supabase) with restricted role-based access. <b>We never sell, rent, or trade student personal data
                     to commercial advertisers, coaching institutes, or third-party marketers</b>.
                   </p>
+                </div>
+
+                <Separator />
+
+                {/* STATUTORY COMPLIANCE: INDIAN DPDP ACT 2023 & IT ACT 2000 */}
+                <div className='rounded-xl border border-blue-500/30 bg-blue-500/5 p-5 space-y-4'>
+                  <div className='flex items-center justify-between flex-wrap gap-2'>
+                    <div className='flex items-center gap-2 text-blue-700 dark:text-blue-300 font-bold text-base'>
+                      <Scale className='h-5 w-5 text-blue-600 dark:text-blue-400' />
+                      6. Statutory Compliance: Digital Personal Data Protection Act, 2023 & IT Act, 2000
+                    </div>
+                    <Badge variant='outline' className='bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30 text-[10px]'>
+                      🇮🇳 Republic of India
+                    </Badge>
+                  </div>
+                  <p className='text-xs sm:text-sm text-muted-foreground leading-relaxed'>
+                    This Privacy Policy is framed in strict compliance with the <b>Digital Personal Data Protection Act, 2023 (DPDP Act, Act No. 22 of 2023)</b>,
+                    the <b>Information Technology Act, 2000 (IT Act, 2000)</b>, and the <b>Information Technology (Reasonable Security Practices and Procedures and Sensitive Personal Data or Information) Rules, 2011 (SPDI Rules)</b>.
+                  </p>
+
+                  <div className='grid grid-cols-1 md:grid-cols-2 gap-3 text-xs'>
+                    <div className='p-3.5 rounded-lg bg-background/90 border space-y-1.5'>
+                      <span className='font-semibold text-foreground block flex items-center gap-1.5'>
+                        🏛 <b>Legal Classifications (Sec. 2(i) & 2(j))</b>
+                      </span>
+                      <p className='text-muted-foreground leading-relaxed'>
+                        <b>Vertical Classes Study Lounge & Library (DeskFlow)</b> serves as the <b>Data Fiduciary</b>. The applicant, enrolled student, and/or parent/lawful guardian acts as the <b>Data Principal</b> under Indian law.
+                      </p>
+                    </div>
+
+                    <div className='p-3.5 rounded-lg bg-background/90 border space-y-1.5'>
+                      <span className='font-semibold text-foreground block flex items-center gap-1.5'>
+                        📜 <b>Lawful Consent Architecture (Sec. 6)</b>
+                      </span>
+                      <p className='text-muted-foreground leading-relaxed'>
+                        All personal identification info, phone numbers, and point-in-time GPS check-in/out records are processed on the basis of <b>free, specific, informed, unconditional, and unambiguous consent</b> with prior itemized notice.
+                      </p>
+                    </div>
+
+                    <div className='p-3.5 rounded-lg bg-background/90 border space-y-1.5'>
+                      <span className='font-semibold text-foreground block flex items-center gap-1.5'>
+                        👨‍👩‍👦 <b>Parental Consent for Minors (Sec. 9)</b>
+                      </span>
+                      <p className='text-muted-foreground leading-relaxed'>
+                        For students under 18 years of age, <b>verifiable consent of parent/lawful guardian</b> is registered via the mandatory emergency contact number. We do not engage in behavioral tracking or profiling harmful to minors.
+                      </p>
+                    </div>
+
+                    <div className='p-3.5 rounded-lg bg-background/90 border space-y-1.5'>
+                      <span className='font-semibold text-foreground block flex items-center gap-1.5'>
+                        🛡 <b>Reasonable Security (Sec. 8(5) & Sec. 43A)</b>
+                      </span>
+                      <p className='text-muted-foreground leading-relaxed'>
+                        Mandated under Section 8(5) of DPDP Act 2023 and Section 43A of IT Act 2000, we deploy end-to-end encrypted databases, SSL/TLS transport security, and role-based administrative authentication to prevent unauthorized disclosure.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* DATA PRINCIPAL RIGHTS */}
+                  <div className='pt-2 space-y-2'>
+                    <h4 className='text-xs font-semibold text-foreground flex items-center gap-1.5'>
+                      <CheckCircle2 className='h-3.5 w-3.5 text-blue-500' />
+                      Your Statutory Rights as a Data Principal (Sections 11, 12, 13 of DPDP Act 2023):
+                    </h4>
+                    <ul className='list-disc pl-5 space-y-1.5 text-xs text-muted-foreground'>
+                      <li>
+                        <b>Right to Access Information (Sec. 11):</b> You have the right to obtain a summary of your personal data processed by the library and review your attendance/fee history.
+                      </li>
+                      <li>
+                        <b>Right to Correction & Erasure (Sec. 12):</b> You may request rectification of inaccurate contact numbers or erasure of personal information once your membership concludes and legal accounts are settled.
+                      </li>
+                      <li>
+                        <b>Right of Grievance Redressal (Sec. 13):</b> You have a statutory right of readily available grievance redressal with our designated Data Protection & Grievance Officer.
+                      </li>
+                      <li>
+                        <b>Right to Nominate (Sec. 14):</b> You retain the legal right to nominate any individual to exercise your data principal rights in the event of incapacity.
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* STATUTORY GRIEVANCE REDRESSAL OFFICER */}
+                  <div className='p-4 rounded-lg bg-card border border-blue-500/20 text-xs space-y-2.5'>
+                    <div className='font-semibold text-foreground flex items-center gap-1.5'>
+                      <Building2 className='h-4 w-4 text-blue-600' />
+                      Statutory Grievance Redressal Officer (Under DPDP Act 2023 & IT SPDI Rules 2011):
+                    </div>
+                    <div className='grid grid-cols-1 sm:grid-cols-2 gap-2 text-muted-foreground'>
+                      <div><b>Officer Name:</b> Sarwar Altaf Dar</div>
+                      <div><b>Designation:</b> Chief Administrator & Data Grievance Officer</div>
+                      <div><b>Physical Address:</b> Vertical Classes Library, Anantnag, Jammu & Kashmir - 192101</div>
+                      <div><b>Direct Helpline:</b> +91 9149847965</div>
+                      <div className='col-span-1 sm:col-span-2'>
+                        <b>Official Compliance Email:</b>{' '}
+                        <a href='mailto:receipts@globalpulse24.in' className='text-primary underline font-medium'>
+                          receipts@globalpulse24.in
+                        </a>{' '}
+                        / <a href='mailto:admin@verticalclasseslibrary.com' className='text-primary underline font-medium'>admin@verticalclasseslibrary.com</a>
+                      </div>
+                    </div>
+                    <p className='text-[11px] text-muted-foreground italic pt-1 border-t'>
+                      In accordance with Rule 5(9) of the IT SPDI Rules, 2011 and Section 13(2) of the DPDP Act, 2023, all data privacy queries and grievances will be acknowledged within 48 hours and resolved within the statutory period of 30 days.
+                    </p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
