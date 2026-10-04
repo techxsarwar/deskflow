@@ -760,9 +760,8 @@ async function broadcastWifiCredentials({ students, wifiConfig, libraryName = 'V
   return summary;
 }
 
-function getAnnouncementHtml({ student, title, body, libraryName = 'Vertical Classes' }) {
+function getAnnouncementHtml({ title, body, libraryName = 'Vertical Classes' }) {
   const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  const seatNo = student?.seat_number && student.seat_number !== 'Unassigned' ? student.seat_number : 'Assigned Study Desk';
   
   // Format body paragraphs
   const formattedBody = (body || '')
@@ -809,10 +808,10 @@ function getAnnouncementHtml({ student, title, body, libraryName = 'Vertical Cla
     <tr>
       <td style="padding:28px 36px 16px 36px;">
         <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:6px;">
-          Hello ${student.full_name || 'Student'},
+          Dear Students &amp; Library Members,
         </div>
         <div style="font-size:13.5px;color:#64748b;line-height:1.5;">
-          This is an official administrative notice broadcast to registered students of <b>${libraryName}</b> (Desk: <b>${seatNo}</b>).
+          This is an official administrative notice broadcast to all registered members of <b>${libraryName} Study Lounge</b>.
         </div>
       </td>
     </tr>
@@ -850,7 +849,7 @@ function getAnnouncementHtml({ student, title, body, libraryName = 'Vertical Cla
           VERTICAL CLASSES STUDY LOUNGE &bull; DESKFLOW MANAGEMENT
         </div>
         <div style="margin-top:6px;font-size:11px;color:#94a3b8;">
-          Sent to <b>${student.email}</b> on ${dateStr} &bull; Confidential Student Communication
+          Official Member Communication &bull; ${dateStr}
         </div>
       </td>
     </tr>
@@ -862,28 +861,35 @@ function getAnnouncementHtml({ student, title, body, libraryName = 'Vertical Cla
   `;
 }
 
-async function sendAnnouncementEmail({ student, title, body, libraryName = 'Vertical Classes' }) {
-  if (!student?.email) {
-    throw new Error('Student does not have an email address configured.');
+async function broadcastAnnouncement({ students, title, body, libraryName = 'Vertical Classes' }) {
+  const bccEmails = students.map((s) => s.email).filter(Boolean);
+
+  if (bccEmails.length === 0) {
+    throw new Error('No students with valid email addresses found.');
   }
 
-  const html = getAnnouncementHtml({ student, title, body, libraryName });
+  const html = getAnnouncementHtml({ title, body, libraryName });
   const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vertical Classes Library <receipts@globalpulse24.in>';
+  const primaryTo = 'Vertical Classes Reception <receipts@globalpulse24.in>';
 
   if (!process.env.RESEND_API_KEY || !resend) {
     return {
       success: true,
       mock: true,
-      recipient: student.email,
-      studentName: student.full_name,
-      message: `Simulated announcement email sent to ${student.email}.`,
+      total: students.length,
+      sent: students.length,
+      failed: 0,
+      recipients: students.map((s) => ({ name: s.full_name, email: s.email, seat: s.seat_number })),
+      errors: [],
+      method: 'BCC',
     };
   }
 
   try {
     const res = await resend.emails.send({
       from: fromEmail,
-      to: [student.email],
+      to: [primaryTo],
+      bcc: bccEmails,
       subject: `📢 [${libraryName} Notice] ${title}`,
       html: html,
     });
@@ -895,13 +901,15 @@ async function sendAnnouncementEmail({ student, title, body, libraryName = 'Vert
         res.error.message?.includes('testing emails') ||
         res.error.message?.includes('only send testing emails')
       ) {
-        console.warn(`Resend testing mode: Forwarding announcement to admin email for ${student.email}`);
+        console.warn('Resend testing mode: Forwarding BCC announcement to admin email');
         const fallbackRes = await resend.emails.send({
           from: fromEmail,
           to: ['darsarwar1908@gmail.com'],
-          subject: `[Student Announcement - Forward to ${student.email}] ${title} — ${libraryName}`,
-          html: `<div style="background:#fef3c7;padding:12px;border-radius:8px;font-size:13px;color:#92400e;margin-bottom:16px;">
-            ⚠️ <b>Resend Sandbox Notice:</b> Delivered to admin email because custom domain is in testing mode. Please forward to <b>${student.email}</b>.
+          subject: `[BCC Announcement - Intended for ${bccEmails.length} Students] ${title} — ${libraryName}`,
+          html:
+            `<div style="background:#fef3c7;padding:12px;border-radius:8px;font-size:13px;color:#92400e;margin-bottom:16px;">
+            ⚠️ <b>Resend Sandbox Notice:</b> Delivered to admin email. In production with verified domain, this broadcasts to <b>${bccEmails.length} students in BCC</b>.<br>
+            <b>BCC Recipients (${bccEmails.length}):</b> ${bccEmails.join(', ')}
           </div>` + html,
         });
 
@@ -909,65 +917,32 @@ async function sendAnnouncementEmail({ student, title, body, libraryName = 'Vert
           success: true,
           sandbox: true,
           data: fallbackRes.data,
-          recipient: 'darsarwar1908@gmail.com',
-          intendedRecipient: student.email,
-          studentName: student.full_name,
+          total: students.length,
+          sent: students.length,
+          failed: 0,
+          recipients: students.map((s) => ({ name: s.full_name, email: s.email, seat: s.seat_number })),
+          errors: [],
+          method: 'BCC',
         };
       }
 
-      throw new Error(res.error.message || 'Resend Announcement dispatch failed');
+      throw new Error(res.error.message || 'Resend Announcement BCC dispatch failed');
     }
 
     return {
       success: true,
       data: res.data,
-      recipient: student.email,
-      studentName: student.full_name,
+      total: students.length,
+      sent: students.length,
+      failed: 0,
+      recipients: students.map((s) => ({ name: s.full_name, email: s.email, seat: s.seat_number })),
+      errors: [],
+      method: 'BCC',
     };
   } catch (error) {
-    console.error(`Failed to send announcement email to ${student.email}:`, error);
+    console.error('Failed to send announcement via BCC:', error);
     throw error;
   }
-}
-
-async function broadcastAnnouncement({ students, title, body, libraryName = 'Vertical Classes' }) {
-  const summary = {
-    total: students.length,
-    sent: 0,
-    failed: 0,
-    recipients: [],
-    errors: [],
-  };
-
-  for (let i = 0; i < students.length; i++) {
-    const student = students[i];
-    try {
-      const res = await sendAnnouncementEmail({ student, title, body, libraryName });
-      summary.sent++;
-      summary.recipients.push({
-        id: student.id,
-        name: student.full_name,
-        email: student.email,
-        seat: student.seat_number,
-        sandbox: res.sandbox || false,
-      });
-    } catch (err) {
-      summary.failed++;
-      summary.errors.push({
-        id: student.id,
-        name: student.full_name,
-        email: student.email,
-        error: err.message,
-      });
-    }
-
-    // 250ms spacing between emails to ensure 100% compliant rate-limiting for 40+ students
-    if (i < students.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-  }
-
-  return summary;
 }
 
 module.exports = {
@@ -975,7 +950,6 @@ module.exports = {
   sendReminderEmail,
   sendWifiCredentialsEmail,
   broadcastWifiCredentials,
-  sendAnnouncementEmail,
   broadcastAnnouncement,
   getReceiptHtml,
   getReminderHtml,

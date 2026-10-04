@@ -11,7 +11,6 @@ const {
   sendReminderEmail,
   sendWifiCredentialsEmail,
   broadcastWifiCredentials,
-  sendAnnouncementEmail,
   broadcastAnnouncement,
 } = require('./services/email');
 const { sendPhoneToken, verifyPhoneToken, sendTelegramOtp, verifyTelegramOtp } = require('./services/otp');
@@ -2063,13 +2062,14 @@ bot.callbackQuery('announcement_broadcast_now', async (ctx) => {
 📌 <b>Subject:</b> ${subject}
 
 📊 <b>Delivery Report:</b>
-• <b>Total Students:</b> ${summary.total}
-• <b>Successfully Delivered:</b> <b>${summary.sent} individual emails</b>
-${summary.failed > 0 ? `• <b>Failed:</b> ${summary.failed}\n` : ''}
-<b>Recipients:</b>
+• <b>Recipients:</b> <b>${summary.sent} students</b> (dispatched via confidential <b>BCC</b>)
+• <b>Delivery Mode:</b> ⚡ Instant 1-Tap BCC Broadcast
+• <b>Sender:</b> Vertical Classes Library &bull; receipts@globalpulse24.in
+
+<b>BCC Recipient Students:</b>
 ${recipientLines}
 ${errorLines}
-📨 <i>Each student received their own private, official branded announcement email.</i>
+🛡 <i>Delivered confidentially via BCC so students cannot see each other's email addresses.</i>
 `;
 
     const kb = new InlineKeyboard()
