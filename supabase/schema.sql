@@ -8,11 +8,11 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 2. Students Table
 CREATE TABLE IF NOT EXISTS public.students (
-    id TEXT PRIMARY KEY DEFAULT ('STU-' || LPAD(FLOOR(RANDOM() * 900 + 100)::TEXT, 3, '0')),
+    phone TEXT PRIMARY KEY,
+    id TEXT UNIQUE NOT NULL DEFAULT ('STU-' || LPAD(FLOOR(RANDOM() * 900 + 100)::TEXT, 3, '0')),
     reg_no TEXT UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
     email TEXT,
-    phone TEXT NOT NULL,
     emergency_contact TEXT,
     address TEXT,
     study_goal TEXT,

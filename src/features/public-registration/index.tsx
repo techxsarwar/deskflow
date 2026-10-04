@@ -40,12 +40,14 @@ export function PublicStudentRegistration() {
   useStudyLoungeInit()
 
   const seats = useStudyLoungeStore((s) => s.seats)
+  const students = useStudyLoungeStore((s) => s.students)
   const addStudent = useStudyLoungeStore((s) => s.addStudent)
 
   const [submittedStudent, setSubmittedStudent] = useState<Student | null>(null)
 
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
+  const [phoneError, setPhoneError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [emergencyContact, setEmergencyContact] = useState('')
   const [address, setAddress] = useState('')
@@ -112,11 +114,46 @@ export function PublicStudentRegistration() {
     setSelectionError(null)
   }
 
+  const handlePhoneChange = (val: string) => {
+    setPhone(val)
+    const digits = val.replace(/\D/g, '')
+    if (digits.length >= 10) {
+      const last10 = digits.slice(-10)
+      const existing = students.find((s) => s.phone && s.phone.replace(/\D/g, '').endsWith(last10))
+      if (existing) {
+        setPhoneError(`⚠️ Mobile +91 ${last10} is already registered under "${existing.fullName}" (Desk: ${existing.seatNumber || 'Assigned'}). A phone number can only have one active desk.`)
+      } else {
+        setPhoneError(null)
+      }
+    } else {
+      setPhoneError(null)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!fullName.trim() || !phone.trim()) {
       alert('Please fill in your name and WhatsApp phone number.')
+      return
+    }
+
+    const digits = phone.replace(/\D/g, '')
+    if (digits.length < 10) {
+      setPhoneError('Please enter a valid 10-digit WhatsApp phone number.')
+      const phoneInput = document.getElementById('pub-phone')
+      phoneInput?.scrollIntoView({ behavior: 'smooth' })
+      return
+    }
+
+    const last10 = digits.slice(-10)
+    const existing = students.find((s) => s.phone && s.phone.replace(/\D/g, '').endsWith(last10))
+    if (existing) {
+      const errMsg = `⚠️ Mobile +91 ${last10} is already registered under "${existing.fullName}" (Desk: ${existing.seatNumber || 'Assigned'}). Duplicate registration is not permitted.`
+      setPhoneError(errMsg)
+      alert(errMsg)
+      const phoneInput = document.getElementById('pub-phone')
+      phoneInput?.scrollIntoView({ behavior: 'smooth' })
       return
     }
 
@@ -190,6 +227,7 @@ export function PublicStudentRegistration() {
     setSubmittedStudent(null)
     setFullName('')
     setPhone('')
+    setPhoneError(null)
     setEmail('')
     setEmergencyContact('')
     setAddress('')
@@ -502,9 +540,16 @@ export function PublicStudentRegistration() {
                       id='pub-phone'
                       placeholder='+91 98765 43210'
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) => handlePhoneChange(e.target.value)}
                       required
+                      className={phoneError ? 'border-destructive focus-visible:ring-destructive' : ''}
                     />
+                    {phoneError && (
+                      <p className='text-xs text-destructive font-medium mt-1.5 flex items-start gap-1'>
+                        <AlertCircle className='h-3.5 w-3.5 shrink-0 mt-0.5' />
+                        <span>{phoneError}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
 
