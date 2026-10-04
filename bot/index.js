@@ -43,8 +43,298 @@ const pendingAttendanceState = new Map();
 // In-memory mapping of Telegram Chat ID -> Student Profile
 const studentChatMap = new Map();
 
+// Helper: Ensure the caller is an authenticated administrator
+async function ensureAdmin(ctx) {
+  const isAdmin = await db.isAdminChatId(ctx.chat?.id);
+  if (!isAdmin) {
+    if (ctx.callbackQuery) {
+      try {
+        await ctx.answerCallbackQuery({
+          text: '⛔ Access Denied: Admin privileges required.',
+          show_alert: true,
+        });
+      } catch (e) {}
+    } else {
+      await ctx.reply('⛔ <b>Access Denied:</b> This action requires Administrator privileges.', {
+        parse_mode: 'HTML',
+      });
+    }
+    return false;
+  }
+  return true;
+}
+
+// Student Lounge Keyboard (Safe for all students)
+function getStudentMenuKeyboard() {
+  return new InlineKeyboard()
+    .text('🚪 Check In Guide', 'student_checkin_guide')
+    .text('🚪 Check Out Guide', 'student_checkout_guide')
+    .row()
+    .text('🚻 Take Restroom Break', 'student_break_guide')
+    .text('🟢 Back at My Desk', 'student_back_guide')
+    .row()
+    .text('🔍 Check My Desk Status', 'student_check_presence')
+    .text('📶 Library Wi-Fi Pass', 'student_wifi_view')
+    .row()
+    .text('🔄 Refresh Menu', 'student_menu_refresh');
+}
+
+async function renderStudentLounge(ctx, edit = false) {
+  const name = ctx.from?.first_name || 'Student';
+  const text = `
+📚 <b>Vertical Classes Library — Student Study Lounge</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Hello, <b>${name}</b>! Welcome to your digital study companion.
+
+Manage your attendance, restroom / study breaks, and Wi-Fi access below:
+
+💡 <b>Quick Commands:</b>
+• <code>/checkin</code> — Share phone number to log attendance
+• <code>/checkout</code> — Share phone number to record study hours
+• <code>/break</code> — Take 10m, 15m, or custom study break
+• <code>/back</code> — Tap when back at your desk
+• <code>/check</code> — View your live desk & presence status
+• <code>/wifi</code> — View library high-speed Wi-Fi password
+`;
+
+  const kb = getStudentMenuKeyboard();
+
+  if (edit && ctx.callbackQuery) {
+    await safeEdit(ctx, text, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } else {
+    await ctx.reply(text, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  }
+}
+
+async function renderStudentWifiPass(ctx, edit = false) {
+  try {
+    const creds = await db.getWifiCredentials();
+    const isConfigured = Boolean(creds.ssid && creds.password);
+
+    const text = `
+📶 <b>Vertical Classes Library — High-Speed Wi-Fi Pass</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${isConfigured ? `
+📡 <b>Wi-Fi Network (SSID):</b> <code>${creds.ssid}</code>
+🔑 <b>Security Password:</b> <code>${creds.password}</code>
+
+📜 <b>Library Wi-Fi Guidelines:</b>
+• 💻 Allowed for 1 active study device (laptop/tablet/phone).
+• 🎧 Headphones mandatory for video lectures and audio.
+• 🚫 Do not share credentials with non-members or visitors.
+• 🛑 Torrenting, streaming entertainment, and gaming are strictly prohibited.
+` : `
+⚠️ <i>Wi-Fi credentials have not been configured yet. Please check with the library front desk.</i>
+`}
+`;
+
+    const kb = new InlineKeyboard()
+      .text('🔙 Back to Lounge Menu', 'student_menu_refresh');
+
+    if (edit && ctx.callbackQuery) {
+      await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
+    } else {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    }
+  } catch (err) {
+    await ctx.reply(`❌ Error loading Wi-Fi pass: ${err.message}`);
+  }
+}
+
+// Student Lounge Callbacks
+bot.callbackQuery('student_checkin_guide', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const contactKb = new Keyboard()
+    .requestContact('📱 Tap to Share Phone Number & Check In')
+    .oneTime()
+    .resized();
+
+  await ctx.reply(`
+🚪 <b>Vertical Classes Library — Entrance Check-In</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Welcome to the study hall! To confirm your arrival and mark your desk present:
+
+👇 <b>Tap the button below to share your phone number:</b>
+<i>(Your attendance and seat number will be verified automatically from our database.)</i>
+`, {
+    parse_mode: 'HTML',
+    reply_markup: contactKb,
+  });
+});
+
+bot.callbackQuery('student_checkout_guide', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const contactKb = new Keyboard()
+    .requestContact('📱 Tap to Share Phone Number & Check Out')
+    .oneTime()
+    .resized();
+
+  await ctx.reply(`
+🚪 <b>Vertical Classes Library — Exit Check-Out</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Leaving for the day? To log your total study hours:
+
+👇 <b>Tap the button below to share your phone number & Check Out:</b>
+`, {
+    parse_mode: 'HTML',
+    reply_markup: contactKb,
+  });
+});
+
+bot.callbackQuery('student_break_guide', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  let student = studentChatMap.get(ctx.chat.id);
+  if (!student) {
+    const { currentlyInside } = await db.getTodayAttendance();
+    if (currentlyInside.length === 1) {
+      student = await db.getStudentById(currentlyInside[0].student_id);
+      if (student) studentChatMap.set(ctx.chat.id, student);
+    }
+  }
+
+  if (student) {
+    return showBreakOptions(ctx, student, false);
+  }
+
+  const { currentlyInside } = await db.getTodayAttendance();
+  if (currentlyInside.length === 0) {
+    return ctx.reply('⚠️ No students are currently checked in inside the library hall. Please Check In first before taking a break.');
+  }
+
+  const kb = new InlineKeyboard();
+  for (const s of currentlyInside.slice(0, 10)) {
+    kb.text(`🪑 ${s.student_name} (${s.seat_number})`, `break_select_${s.student_id}`).row();
+  }
+  kb.text('🔙 Cancel', 'student_menu_refresh');
+
+  await ctx.reply('🚻 <b>Select your desk / name to start break:</b>', {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+});
+
+bot.callbackQuery('student_back_guide', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  let student = studentChatMap.get(ctx.chat.id);
+  if (!student) {
+    const { currentlyInside } = await db.getTodayAttendance();
+    if (currentlyInside.length === 1) {
+      student = await db.getStudentById(currentlyInside[0].student_id);
+      if (student) studentChatMap.set(ctx.chat.id, student);
+    }
+  }
+
+  if (student) {
+    const activeBreak = await db.getActiveBreakForStudent(student.id);
+    if (activeBreak) {
+      await db.endStudentBreak({ studentId: student.id });
+      return ctx.reply(`
+🟢 <b>Welcome Back!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${student.full_name}</b> (Desk: <b>${student.seat_number || 'Assigned'}</b>)
+
+Your status is now: 🟢 <b>Inside Hall — Studying at Desk</b>.
+Happy studying! 📚✨
+`, {
+        parse_mode: 'HTML',
+        reply_markup: getStudentMenuKeyboard(),
+      });
+    } else {
+      return ctx.reply('ℹ️ You are not currently marked on a break.', {
+        reply_markup: getStudentMenuKeyboard(),
+      });
+    }
+  }
+
+  return ctx.reply('ℹ️ If you are returning from break, send <code>/back</code> or tap the back button on your break message.', {
+    parse_mode: 'HTML',
+    reply_markup: getStudentMenuKeyboard(),
+  });
+});
+
+bot.callbackQuery('student_check_presence', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  let student = studentChatMap.get(ctx.chat.id);
+  if (!student) {
+    return ctx.reply(`
+🔍 <b>Check Your Desk & Presence Status:</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Send: <code>/check &lt;Your Name or Desk&gt;</code>
+<i>Example: <code>/check Sarwar</code> or <code>/check Desk 1</code></i>
+`, { parse_mode: 'HTML' });
+  }
+
+  try {
+    const res = await db.getStudentPresenceStatus(student.full_name);
+    if (!res || !res.found) {
+      return ctx.reply(`ℹ️ Status for <b>${student.full_name}</b>: Not currently checked in today.`, { parse_mode: 'HTML' });
+    }
+    const s = res.student;
+    const seat = s.seat_number && s.seat_number !== 'Unassigned' ? s.seat_number : 'Assigned Study Desk';
+
+    if (res.status === 'on_break') {
+      const brk = res.activeBreak;
+      const expTimeStr = new Date(brk.expected_return).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+      return ctx.reply(`
+📍 <b>Student Presence Status</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${s.full_name}</b> (Desk: <b>${seat}</b>)
+🟡 <b>Status:</b> <b>In Restroom / On Break</b> (${brk.duration_minutes}m)
+🕒 <b>Expected Back:</b> ~${expTimeStr}
+`, {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('🟢 I\'m Back at My Desk', `break_end_${s.id}`),
+      });
+    }
+
+    if (res.status === 'studying') {
+      const inTimeStr = res.checkInLog?.check_in_time 
+        ? new Date(res.checkInLog.check_in_time).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
+        : 'Earlier today';
+      return ctx.reply(`
+📍 <b>Student Presence Status</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${s.full_name}</b> (Desk: <b>${seat}</b>)
+🟢 <b>Status:</b> <b>Inside Hall — Studying at Desk</b>
+🕒 <b>Checked In:</b> ${inTimeStr} (IST)
+`, {
+        parse_mode: 'HTML',
+        reply_markup: getStudentMenuKeyboard(),
+      });
+    }
+
+    return ctx.reply(`
+📍 <b>Student Presence Status</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${s.full_name}</b> (Desk: <b>${seat}</b>)
+⚪ <b>Status:</b> <b>Not in Library (Checked Out / Absent)</b>
+`, {
+      parse_mode: 'HTML',
+      reply_markup: getStudentMenuKeyboard(),
+    });
+  } catch (err) {
+    return ctx.reply(`❌ Error checking status: ${err.message}`);
+  }
+});
+
+bot.callbackQuery('student_wifi_view', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await renderStudentWifiPass(ctx, false);
+});
+
+bot.callbackQuery('student_menu_refresh', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await renderStudentLounge(ctx, true);
+});
+
 // ==============================================================================
-// 1. Interactive Keyboards & Menus
+// 1. Interactive Keyboards & Menus (Admin Hub)
 // ==============================================================================
 
 async function getMainMenuKeyboard(radius) {
@@ -131,7 +421,13 @@ Leaving for the day? To log your total study hours:
     });
   }
 
-  // 3. Default Admin / Management Menu
+  // 3. Role-Based Verification: Admin vs Student
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
+  if (!isAdmin) {
+    return renderStudentLounge(ctx, false);
+  }
+
+  // Authenticated Admin Hub
   ADMIN_CHAT_ID = ctx.chat.id;
   const name = ctx.from?.first_name || 'Librarian';
   const adminPhone = process.env.ADMIN_PHONE || '9149847965';
@@ -157,8 +453,10 @@ Hello, <b>${name}</b>! You are authenticated as the <b>Lead Librarian & Admin</b
   });
 });
 
-// Admin Command to Link / Update Admin Phone
+// Admin Command to Link / Update Admin Phone (Admin Only)
 bot.command('setphone', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
+
   const phoneInput = ctx.match?.trim();
   if (!phoneInput) {
     return ctx.reply(`
@@ -213,10 +511,16 @@ bot.command('checkout', async (ctx) => {
 });
 
 bot.command(['wifi', 'wificreds'], async (ctx) => {
-  await renderWifiMenu(ctx, false);
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
+  if (isAdmin) {
+    await renderWifiMenu(ctx, false);
+  } else {
+    await renderStudentWifiPass(ctx, false);
+  }
 });
 
 bot.command(['announce', 'broadcast'], async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await renderAnnouncementMenu(ctx, false);
 });
 
@@ -498,8 +802,10 @@ ${res.isGracePeriod
   }
 });
 
-// Admin Command /breaks
+// Admin Command /breaks (Admin Only)
 bot.command(['breaks', 'livebreaks'], async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
+
   try {
     const summary = await db.getLibraryPresenceSummary();
     const nowTime = getISTTime();
@@ -543,6 +849,15 @@ bot.command(['breaks', 'livebreaks'], async (ctx) => {
 bot.on('message:text', async (ctx, next) => {
   const chatId = ctx.chat.id;
   const state = adminFlowState.get(chatId);
+
+  // Guard: Any administrative flow state requires verified admin privileges
+  if (state && state.action !== 'awaiting_break_duration') {
+    const isAdmin = await db.isAdminChatId(chatId);
+    if (!isAdmin) {
+      adminFlowState.delete(chatId);
+      return ctx.reply('⛔ <b>Access Denied:</b> Administrator privileges required.', { parse_mode: 'HTML' });
+    }
+  }
 
   // Announcement Flow - Step 1: Subject / Title
   if (state && state.action === 'awaiting_announcement_subject') {
@@ -1093,10 +1408,15 @@ You are outside the library premises. Remote attendance is strictly prohibited, 
 });
 
 bot.command('menu', async (ctx) => {
-  await ctx.reply('📋 <b>DeskFlow Management Hub:</b>', {
-    parse_mode: 'HTML',
-    reply_markup: await getMainMenuKeyboard(),
-  });
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
+  if (isAdmin) {
+    await ctx.reply('📋 <b>DeskFlow Management Hub:</b>', {
+      parse_mode: 'HTML',
+      reply_markup: await getMainMenuKeyboard(),
+    });
+  } else {
+    await renderStudentLounge(ctx, false);
+  }
 });
 
 // Global error handler to ensure bot never crashes on Telegram API errors
@@ -1120,10 +1440,15 @@ async function safeEdit(ctx, text, options) {
 // Callback Query: Main Menu
 bot.callbackQuery('menu_main', async (ctx) => {
   await ctx.answerCallbackQuery();
-  await safeEdit(ctx, '📋 <b>DeskFlow Management Hub:</b>', {
-    parse_mode: 'HTML',
-    reply_markup: await getMainMenuKeyboard(),
-  });
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
+  if (isAdmin) {
+    await safeEdit(ctx, '📋 <b>DeskFlow Management Hub:</b>', {
+      parse_mode: 'HTML',
+      reply_markup: await getMainMenuKeyboard(),
+    });
+  } else {
+    await renderStudentLounge(ctx, true);
+  }
 });
 
 // ==============================================================================
@@ -1131,6 +1456,7 @@ bot.callbackQuery('menu_main', async (ctx) => {
 // ==============================================================================
 
 bot.callbackQuery('menu_desks', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const seats = await db.getAllSeats();
@@ -1169,6 +1495,7 @@ bot.callbackQuery('menu_desks', async (ctx) => {
 
 // Vacant Desks
 bot.callbackQuery('desks_vacant', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const seats = await db.getAllSeats();
@@ -1202,6 +1529,7 @@ bot.callbackQuery('desks_vacant', async (ctx) => {
 
 // Occupied Desks
 bot.callbackQuery('desks_occupied', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const seats = await db.getAllSeats();
@@ -1232,6 +1560,7 @@ bot.callbackQuery('desks_occupied', async (ctx) => {
 
 // Inspect a specific seat
 bot.callbackQuery(/^seat_view_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   const seatNumber = ctx.match[1];
   try {
@@ -1271,6 +1600,7 @@ bot.callbackQuery(/^seat_view_(.+)$/, async (ctx) => {
 
 // Vacate a seat
 bot.callbackQuery(/^seat_vacate_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   const seatNumber = ctx.match[1];
   try {
@@ -1289,6 +1619,7 @@ bot.callbackQuery(/^seat_vacate_(.+)$/, async (ctx) => {
 // ==============================================================================
 
 bot.callbackQuery('menu_students', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const students = await db.searchStudents('');
@@ -1322,8 +1653,9 @@ Select a student to view membership, collect fees, or dispatch an email receipt:
   }
 });
 
-// Search command
+// Search command (Admin Only)
 bot.command('student', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   const query = ctx.match?.trim() || '';
   try {
     const students = await db.searchStudents(query);
@@ -1346,8 +1678,9 @@ bot.command('student', async (ctx) => {
   }
 });
 
-// View Student Details
+// View Student Details (Admin Only)
 bot.callbackQuery(/^student_view_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   const studentId = ctx.match[1];
   try {
@@ -1410,6 +1743,7 @@ bot.callbackQuery(/^student_view_(.+)$/, async (ctx) => {
 // ==============================================================================
 
 bot.callbackQuery('menu_fees', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const students = await db.searchStudents('');
@@ -1434,6 +1768,7 @@ bot.callbackQuery('menu_fees', async (ctx) => {
 
 // Step 1: Fee Collection Amount Prompt (Presets + Custom)
 bot.callbackQuery(/^fee_collect_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   const studentId = ctx.match[1];
   try {
@@ -1471,6 +1806,7 @@ bot.callbackQuery(/^fee_collect_(.+)$/, async (ctx) => {
 
 // Prompt for custom amount input
 bot.callbackQuery(/^fee_custom_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   const studentId = ctx.match[1];
   try {
@@ -1501,6 +1837,7 @@ bot.callbackQuery(/^fee_custom_(.+)$/, async (ctx) => {
 
 // Step 2: Amount Selected -> Choose Payment Mode (UPI, Cash, Bank Transfer, Cheque)
 bot.callbackQuery(/^fee_amt_(.+)_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   const [, studentId, amountStr] = ctx.match;
   const amount = parseInt(amountStr, 10);
@@ -1537,6 +1874,7 @@ bot.callbackQuery(/^fee_amt_(.+)_(.+)$/, async (ctx) => {
 
 // Step 3: Execute Payment Collection & Generate Receipt
 bot.callbackQuery(/^fee_pay_(.+)_(.+)_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery({ text: 'Recording payment...' });
   const [, studentId, amount, mode] = ctx.match;
   try {
@@ -1590,6 +1928,7 @@ bot.callbackQuery(/^fee_pay_(.+)_(.+)_(.+)$/, async (ctx) => {
 // ==============================================================================
 
 bot.callbackQuery(/^email_receipt_([^_]+)(?:_(.+))?$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery({ text: 'Sending receipt email via Resend...' });
   const studentId = ctx.match[1];
   const transactionId = ctx.match[2];
@@ -1653,8 +1992,9 @@ bot.callbackQuery(/^email_receipt_([^_]+)(?:_(.+))?$/, async (ctx) => {
   }
 });
 
-// Command: /emailreceipt [student_id]
+// Command: /emailreceipt [student_id] (Admin Only)
 bot.command('emailreceipt', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   const query = ctx.match?.trim();
   if (!query) {
     return ctx.reply('Usage: <code>/emailreceipt [student_name_or_id]</code>', { parse_mode: 'HTML' });
@@ -1682,6 +2022,7 @@ bot.command('emailreceipt', async (ctx) => {
 
 // Callback: Send individual reminder email
 bot.callbackQuery(/^email_reminder_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery({ text: 'Sending renewal reminder email...' });
   const studentId = ctx.match[1];
   try {
@@ -1714,6 +2055,7 @@ bot.callbackQuery(/^email_reminder_(.+)$/, async (ctx) => {
 
 // Callback: Broadcast reminders to all defaulters
 bot.callbackQuery('remind_all_defaulters', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery({ text: 'Dispatching reminders to all defaulters...' });
   try {
     const { dues } = await db.getDefaultersAndExpiries();
@@ -1746,8 +2088,9 @@ bot.callbackQuery('remind_all_defaulters', async (ctx) => {
   }
 });
 
-// Command: /remind [student_name_or_seat]
+// Command: /remind [student_name_or_seat] (Admin Only)
 bot.command('remind', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   const query = ctx.match?.trim();
   if (!query) {
     return ctx.reply('Usage: <code>/remind [student_name_or_seat]</code>', { parse_mode: 'HTML' });
@@ -1776,6 +2119,7 @@ bot.command('remind', async (ctx) => {
 // ==============================================================================
 
 bot.callbackQuery('menu_defaulters', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const { dues, expiringSoon, expired } = await db.getDefaultersAndExpiries();
@@ -1819,6 +2163,7 @@ bot.callbackQuery('menu_defaulters', async (ctx) => {
 // ==============================================================================
 
 bot.callbackQuery('menu_admissions', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const pending = await db.getPendingAdmissions();
@@ -1848,6 +2193,7 @@ bot.callbackQuery('menu_admissions', async (ctx) => {
 
 // View prospective admission
 bot.callbackQuery(/^adm_view_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   const studentId = ctx.match[1];
   try {
@@ -1883,6 +2229,7 @@ bot.callbackQuery(/^adm_view_(.+)$/, async (ctx) => {
 
 // Approve admission
 bot.callbackQuery(/^adm_approve_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   const studentId = ctx.match[1];
   try {
@@ -1908,6 +2255,7 @@ bot.callbackQuery(/^adm_approve_(.+)$/, async (ctx) => {
 
 // Daily Stats
 bot.callbackQuery('menu_stats', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const seats = await db.getAllSeats();
@@ -1939,6 +2287,7 @@ bot.callbackQuery('menu_stats', async (ctx) => {
 
 // Live Attendance & Headcount Callback
 bot.callbackQuery('menu_attendance', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const { currentlyInside, checkedOut } = await db.getTodayAttendance();
@@ -1976,6 +2325,7 @@ bot.callbackQuery('menu_attendance', async (ctx) => {
 
 // Attendance QR Codes display
 bot.callbackQuery('menu_qrs', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   const botUsername = ctx.me.username || 'controllibrarybot';
   const checkInUrl = `https://t.me/${botUsername}?start=in`;
@@ -2013,8 +2363,9 @@ Print and place these two QR codes at your library doors:
   });
 });
 
-// Commands: /attendance and /qr
+// Commands: /attendance and /qr (Admin Only)
 bot.command('attendance', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   try {
     const { currentlyInside, checkedOut } = await db.getTodayAttendance();
     const nowTime = getISTTime();
@@ -2040,6 +2391,7 @@ bot.command('attendance', async (ctx) => {
 });
 
 bot.command('qr', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   const botUsername = ctx.me.username || 'controllibrarybot';
   const checkInUrl = `https://t.me/${botUsername}?start=in`;
   const checkOutUrl = `https://t.me/${botUsername}?start=out`;
@@ -2108,11 +2460,13 @@ async function renderGeofenceMenu(ctx, edit = true) {
 }
 
 bot.callbackQuery('menu_geofence', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   await renderGeofenceMenu(ctx, true);
 });
 
 bot.callbackQuery('geofence_radius_custom', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   const geofence = await db.getGeofenceSettings();
   adminFlowState.set(ctx.chat.id, { action: 'awaiting_geofence_range' });
@@ -2137,6 +2491,7 @@ bot.callbackQuery('geofence_radius_custom', async (ctx) => {
 });
 
 bot.callbackQuery(/^geofence_radius_(\d+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   const newRadius = parseInt(ctx.match[1], 10);
   await ctx.answerCallbackQuery({ text: `Radius updated to ${newRadius} meters!` });
   try {
@@ -2148,6 +2503,7 @@ bot.callbackQuery(/^geofence_radius_(\d+)$/, async (ctx) => {
 });
 
 bot.callbackQuery('geofence_toggle', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   try {
     const current = await db.getGeofenceSettings();
     const newStatus = !current.enabled;
@@ -2159,8 +2515,9 @@ bot.callbackQuery('geofence_toggle', async (ctx) => {
   }
 });
 
-// Admin Command: /setrange [meters] or /range [meters]
+// Admin Command: /setrange [meters] or /range [meters] (Admin Only)
 bot.command(['setrange', 'range'], async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   const input = ctx.match?.trim();
   if (!input) {
     return renderGeofenceMenu(ctx, false);
@@ -2192,8 +2549,9 @@ Students physically within <b>${updated.radius_meters} meters</b> of the library
   }
 });
 
-// Admin Manual Force Check-In Command: /admincheckin [student_name_or_seat]
+// Admin Manual Force Check-In Command: /admincheckin [student_name_or_seat] (Admin Only)
 bot.command(['admincheckin', 'forcein'], async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   const query = ctx.match?.trim();
   if (!query) {
     return ctx.reply(`
@@ -2298,10 +2656,16 @@ Set up your high-speed library Wi-Fi SSID and password to securely broadcast acc
 
 bot.callbackQuery('menu_wifi', async (ctx) => {
   await ctx.answerCallbackQuery();
-  await renderWifiMenu(ctx, true);
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
+  if (isAdmin) {
+    await renderWifiMenu(ctx, true);
+  } else {
+    await renderStudentWifiPass(ctx, true);
+  }
 });
 
 bot.callbackQuery('wifi_setup_start', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   adminFlowState.set(ctx.chat.id, { action: 'awaiting_wifi_ssid' });
 
@@ -2323,6 +2687,7 @@ bot.callbackQuery('wifi_setup_start', async (ctx) => {
 });
 
 bot.callbackQuery('wifi_share_confirm', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const creds = await db.getWifiCredentials();
@@ -2379,6 +2744,7 @@ ${previewList}${moreText}
 });
 
 bot.callbackQuery('wifi_share_broadcast', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery({ text: 'Starting email broadcast...' });
   try {
     const creds = await db.getWifiCredentials();
@@ -2502,11 +2868,13 @@ ${historySnippet}
 }
 
 bot.callbackQuery('menu_announcement', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   await renderAnnouncementMenu(ctx, true);
 });
 
 bot.callbackQuery('announcement_compose_start', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   adminFlowState.set(ctx.chat.id, { action: 'awaiting_announcement_subject' });
 
@@ -2526,6 +2894,7 @@ bot.callbackQuery('announcement_compose_start', async (ctx) => {
 });
 
 bot.callbackQuery('announcement_broadcast_now', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery({ text: 'Starting announcement broadcast...' });
   const chatId = ctx.chat.id;
   const state = adminFlowState.get(chatId);
@@ -2608,6 +2977,7 @@ ${errorLines}
 });
 
 bot.callbackQuery('announcement_history', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const history = await db.getAnnouncementsHistory();
@@ -2654,6 +3024,7 @@ ${items}
 // ==============================================================================
 
 bot.callbackQuery('menu_breaks', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
   await ctx.answerCallbackQuery();
   try {
     const summary = await db.getLibraryPresenceSummary();

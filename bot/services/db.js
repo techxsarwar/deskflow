@@ -944,6 +944,25 @@ async function getAllAdmins() {
   }
 }
 
+async function isAdminChatId(chatId) {
+  if (!chatId) return false;
+  const strId = chatId.toString();
+  const envAdminId = (process.env.ADMIN_CHAT_ID || '8707444480').toString();
+  if (strId === envAdminId) return true;
+
+  try {
+    const { data } = await supabase
+      .from('admin_accounts')
+      .select('telegram_chat_id')
+      .eq('telegram_chat_id', strId)
+      .eq('is_active', true)
+      .limit(1);
+    return Boolean(data && data.length > 0);
+  } catch (e) {
+    return false;
+  }
+}
+
 module.exports = {
   supabase,
   getAllSeats,
@@ -966,6 +985,7 @@ module.exports = {
   getAdminByPhone,
   linkAdminPhone,
   getAllAdmins,
+  isAdminChatId,
   calculateDistanceMeters,
   getGeofenceSettings,
   updateGeofenceSettings,
