@@ -1,0 +1,32 @@
+services:
+  # 1. Telegram Bot & 2FA Service
+  - type: web
+    name: deskflow-bot
+    runtime: node
+    plan: free
+    rootDir: bot
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        value: Vertical Classes Library <receipts@globalpulse24.in>
+      - key: ADMIN_CHAT_ID
+        sync: false
+      - key: ADMIN_PHONE
+        sync: false
+      - key: WEB_APP_URL
+        value: https://thedeskflow.vercel.app
