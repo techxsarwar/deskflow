@@ -25,6 +25,8 @@ const bot = new Bot(BOT_TOKEN);
 
 // In-memory conversation state for interactive admin input (e.g. custom fee amounts)
 const adminFlowState = new Map();
+// In-memory state for 2-step attendance verification (Contact -> Location)
+const pendingAttendanceState = new Map();
 
 // ==============================================================================
 // 1. Interactive Keyboards & Menus
@@ -43,6 +45,8 @@ function getMainMenuKeyboard() {
     .row()
     .text('📊 Daily Stats', 'menu_stats')
     .text('📷 Attendance QRs', 'menu_qrs')
+    .row()
+    .text('🛡 GPS Geofence (75m)', 'menu_geofence')
     .row();
 
   if (WEB_APP_URL) {
@@ -234,7 +238,7 @@ bot.on('message:text', async (ctx, next) => {
   return next();
 });
 
-// Native Telegram Contact Handler for 1-Tap Attendance Check-In / Out
+// Native Telegram Contact Handler for 1-Tap Attendance Check-In / Out (Step 1)
 bot.on('message:contact', async (ctx) => {
   const contact = ctx.message.contact;
   const phone = contact.phone_number;
@@ -262,6 +266,80 @@ Please contact the administration counter or apply online at:
       (l) => l.student_id === student.id && l.status === 'checked_in'
     );
 
+    const action = activeSession ? 'checkout' : 'checkin';
+    const actionTitle = action === 'checkout' ? 'Exit Check-Out' : 'Entrance Check-In';
+    const actionEmoji = action === 'checkout' ? '🚪' : '🎉';
+    const btnText = action === 'checkout'
+      ? '📍 Tap to Share GPS Location & Check Out'
+      : '📍 Tap to Share GPS Location & Check In';
+
+    // Store in pending attendance state awaiting GPS location
+    pendingAttendanceState.set(ctx.chat.id, {
+      student,
+      action,
+      activeSession,
+      timestamp: Date.now(),
+    });
+
+    const geofence = await db.getGeofenceSettings();
+
+    const locationKb = new Keyboard()
+      .requestLocation(btnText)
+      .oneTime()
+      .resized();
+
+    await ctx.reply(`
+${actionEmoji} <b>${actionTitle} — Step 2 of 2: Location Verification</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+🪑 <b>Desk:</b> <b>${student.seat_number || 'Flexi'}</b>
+🏢 <b>Library:</b> ${geofence.name}
+
+🛡 <b>Anti-Proxy Geofence Active:</b>
+To verify student safety and prevent remote attendance from home, you must be physically inside the study lounge (within <b>${geofence.radius_meters} meters</b>).
+
+👇 <b>Tap the button below to share your GPS Location & complete ${actionTitle}:</b>
+`, {
+      parse_mode: 'HTML',
+      reply_markup: locationKb,
+    });
+  } catch (err) {
+    console.error('Contact attendance error:', err);
+    await ctx.reply(`❌ Attendance error: ${err.message}`, {
+      reply_markup: { remove_keyboard: true },
+    });
+  }
+});
+
+// Native Telegram Location Handler with Geofence Verification (Step 2)
+bot.on('message:location', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const state = pendingAttendanceState.get(chatId);
+
+  if (!state || (Date.now() - state.timestamp > 5 * 60 * 1000)) {
+    pendingAttendanceState.delete(chatId);
+    return ctx.reply(`
+⚠️ <b>Session Expired or No Pending Attendance</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Please send /checkin or /checkout, or scan the entrance QR code to begin.
+`, {
+      parse_mode: 'HTML',
+      reply_markup: { remove_keyboard: true },
+    });
+  }
+
+  const { student, action } = state;
+  const { latitude, longitude } = ctx.message.location;
+
+  try {
+    const geofence = await db.getGeofenceSettings();
+    const distanceMeters = db.calculateDistanceMeters(
+      latitude,
+      longitude,
+      geofence.latitude,
+      geofence.longitude
+    );
+
     const nowTime = getISTTime();
     const SHIFT_INFO = {
       morning: 'Morning Slot (06:00 AM - 12:00 PM)',
@@ -272,9 +350,41 @@ Please contact the administration counter or apply online at:
     };
     const shiftText = SHIFT_INFO[student.shift] || (student.shift ? student.shift.toUpperCase() : 'Full Day Access');
 
-    // If currently checked in, this scan triggers CHECK-OUT!
-    if (activeSession) {
-      const result = await db.checkOutStudent(student.id);
+    // Geofence verification check
+    if (geofence.enabled && distanceMeters > geofence.radius_meters) {
+      await ctx.reply(`
+❌ <b>Attendance Denied — Outside Library!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📍 <b>Your Distance:</b> <b>${distanceMeters.toLocaleString('en-IN')} meters away</b>
+🎯 <b>Allowed Geofence:</b> Within <b>${geofence.radius_meters} meters</b> of ${geofence.name}
+
+⚠️ <b>Security Policy:</b>
+Remote attendance from home or outside the library is strictly blocked. You must be physically present inside the study hall to mark attendance.
+
+👉 <i>Please enter the library and try again when you are inside.</i>
+`, {
+        parse_mode: 'HTML',
+        reply_markup: { remove_keyboard: true },
+      });
+
+      // Alert Librarian / Admin of remote check-in attempt
+      if (ADMIN_CHAT_ID) {
+        try {
+          await bot.api.sendMessage(
+            ADMIN_CHAT_ID,
+            `🚨 <b>[Remote Attendance Blocked]</b>\n👤 <b>${student.full_name}</b> (Desk: <b>${student.seat_number}</b>)\n❌ Attempted <b>${action.toUpperCase()}</b> from <b>${distanceMeters.toLocaleString('en-IN')}m away</b> (Outside Library)!\n🕒 Time: ${nowTime} (IST)\n📍 GPS: <code>${latitude.toFixed(6)}, ${longitude.toFixed(6)}</code>`,
+            { parse_mode: 'HTML' }
+          );
+        } catch (e) {}
+      }
+      return;
+    }
+
+    // Inside Geofence! Process Attendance
+    pendingAttendanceState.delete(chatId);
+
+    if (action === 'checkout') {
+      const result = await db.checkOutStudent(student.id, { latitude, longitude, distanceMeters });
       const hours = Math.floor((result.durationMinutes || 0) / 60);
       const mins = (result.durationMinutes || 0) % 60;
       const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} mins`;
@@ -287,6 +397,7 @@ Please contact the administration counter or apply online at:
 ⏰ <b>Slot:</b> ${shiftText}
 🕒 <b>Check-Out Time:</b> ${nowTime} (IST)
 ⏱ <b>Total Study Duration:</b> <b>${durationStr}</b>
+📍 <b>GPS Verification:</b> <b>Verified Inside (${distanceMeters}m from center)</b>
 
 <i>Great study session today! See you tomorrow. 📚✨</i>
 `, {
@@ -294,12 +405,11 @@ Please contact the administration counter or apply online at:
         reply_markup: { remove_keyboard: true },
       });
 
-      // Notify Librarian
       if (ADMIN_CHAT_ID) {
         try {
           await bot.api.sendMessage(
             ADMIN_CHAT_ID,
-            `🔴 <b>[Check-Out Notice]</b>\n👤 <b>${student.full_name}</b> checked out from Desk <b>${student.seat_number}</b> at ${nowTime} (IST).\n⏱ Studied: <b>${durationStr}</b>`,
+            `🔴 <b>[Check-Out Notice]</b>\n👤 <b>${student.full_name}</b> checked out from Desk <b>${student.seat_number}</b> at ${nowTime} (IST).\n⏱ Studied: <b>${durationStr}</b>\n📍 GPS Verified (${distanceMeters}m from center).`,
             { parse_mode: 'HTML' }
           );
         } catch (e) {}
@@ -307,8 +417,8 @@ Please contact the administration counter or apply online at:
       return;
     }
 
-    // Otherwise, this scan triggers CHECK-IN!
-    await db.checkInStudent(student.id);
+    // Entrance Check-In
+    await db.checkInStudent(student.id, { latitude, longitude, distanceMeters });
 
     await ctx.reply(`
 🎉 <b>Check-In Confirmed!</b>
@@ -317,6 +427,7 @@ Please contact the administration counter or apply online at:
 🪑 <b>Your Desk:</b> <b>${student.seat_number || 'Assigned'}</b>
 ⏰ <b>Assigned Slot:</b> ${shiftText}
 🕒 <b>Check-In Time:</b> ${nowTime} (IST)
+📍 <b>GPS Verification:</b> <b>Verified Inside (${distanceMeters}m from center)</b>
 ⏳ <b>Membership Valid Till:</b> ${student.end_date}
 
 <i>Have a focused and productive study session! 📖🔥</i>
@@ -325,18 +436,17 @@ Please contact the administration counter or apply online at:
       reply_markup: { remove_keyboard: true },
     });
 
-    // Notify Librarian
     if (ADMIN_CHAT_ID) {
       try {
         await bot.api.sendMessage(
           ADMIN_CHAT_ID,
-          `🟢 <b>[Check-In Notice]</b>\n👤 <b>${student.full_name}</b> entered and occupied Desk <b>${student.seat_number}</b> at ${nowTime} (IST) [${shiftText}].`,
+          `🟢 <b>[Check-In Notice]</b>\n👤 <b>${student.full_name}</b> entered and occupied Desk <b>${student.seat_number}</b> at ${nowTime} (IST) [${shiftText}].\n📍 GPS Verified (${distanceMeters}m from center).`,
           { parse_mode: 'HTML' }
         );
       } catch (e) {}
     }
   } catch (err) {
-    console.error('Contact attendance error:', err);
+    console.error('Location attendance error:', err);
     await ctx.reply(`❌ Attendance error: ${err.message}`, {
       reply_markup: { remove_keyboard: true },
     });
@@ -1300,6 +1410,121 @@ bot.command('qr', async (ctx) => {
 🟢 <b>Entrance Check-In:</b> <code>${checkInUrl}</code>\n
 🔴 <b>Exit Check-Out:</b> <code>${checkOutUrl}</code>
 `, { parse_mode: 'HTML' });
+});
+
+// ==============================================================================
+// 8.5. GPS Geofence Administration & Controls
+// ==============================================================================
+
+bot.callbackQuery('menu_geofence', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  try {
+    const geofence = await db.getGeofenceSettings();
+    const statusEmoji = geofence.enabled ? '🟢 ACTIVE' : '🔴 DISABLED';
+
+    const text = `
+🛡 <b>Library GPS Geofence Controls</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏢 <b>Library:</b> ${geofence.name}
+📍 <b>Coordinates:</b> <code>${geofence.latitude.toFixed(6)}, ${geofence.longitude.toFixed(6)}</code>
+📏 <b>Allowed Radius:</b> <b>${geofence.radius_meters} Meters</b>
+🔒 <b>Anti-Proxy Protection:</b> ${statusEmoji}
+
+<i>Students must share their live phone GPS when scanning at the door. If they are farther than ${geofence.radius_meters}m away, check-in and check-out are strictly denied.</i>
+`;
+
+    const kb = new InlineKeyboard()
+      .text(geofence.radius_meters === 50 ? '🔘 50m (Strict)' : '50m (Strict)', 'geofence_radius_50')
+      .text(geofence.radius_meters === 75 ? '🔘 75m (Recommended)' : '75m (Recommended)', 'geofence_radius_75')
+      .text(geofence.radius_meters === 100 ? '🔘 100m' : '100m', 'geofence_radius_100')
+      .row()
+      .text(geofence.enabled ? '⏸ Pause Geofence' : '▶️ Enable Geofence', 'geofence_toggle')
+      .row()
+      .text('🔙 Back to Main Menu', 'menu_main');
+
+    await ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    await ctx.reply(`❌ Error loading geofence: ${err.message}`);
+  }
+});
+
+bot.callbackQuery(/^geofence_radius_(\d+)$/, async (ctx) => {
+  const newRadius = parseInt(ctx.match[1], 10);
+  await ctx.answerCallbackQuery({ text: `Radius updated to ${newRadius} meters!` });
+  try {
+    await db.updateGeofenceSettings({ radius_meters: newRadius });
+    const geofence = await db.getGeofenceSettings();
+    const statusEmoji = geofence.enabled ? '🟢 ACTIVE' : '🔴 DISABLED';
+
+    const text = `
+🛡 <b>Library GPS Geofence Controls</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏢 <b>Library:</b> ${geofence.name}
+📍 <b>Coordinates:</b> <code>${geofence.latitude.toFixed(6)}, ${geofence.longitude.toFixed(6)}</code>
+📏 <b>Allowed Radius:</b> <b>${geofence.radius_meters} Meters</b> ✅
+🔒 <b>Anti-Proxy Protection:</b> ${statusEmoji}
+
+<i>✅ Geofence perimeter updated to <b>${geofence.radius_meters} meters</b>!</i>
+`;
+
+    const kb = new InlineKeyboard()
+      .text(geofence.radius_meters === 50 ? '🔘 50m (Strict)' : '50m (Strict)', 'geofence_radius_50')
+      .text(geofence.radius_meters === 75 ? '🔘 75m (Recommended)' : '75m (Recommended)', 'geofence_radius_75')
+      .text(geofence.radius_meters === 100 ? '🔘 100m' : '100m', 'geofence_radius_100')
+      .row()
+      .text(geofence.enabled ? '⏸ Pause Geofence' : '▶️ Enable Geofence', 'geofence_toggle')
+      .row()
+      .text('🔙 Back to Main Menu', 'menu_main');
+
+    await ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    await ctx.reply(`❌ Error updating radius: ${err.message}`);
+  }
+});
+
+bot.callbackQuery('geofence_toggle', async (ctx) => {
+  try {
+    const current = await db.getGeofenceSettings();
+    const newStatus = !current.enabled;
+    await db.updateGeofenceSettings({ enabled: newStatus });
+    await ctx.answerCallbackQuery({ text: newStatus ? 'Geofence activated!' : 'Geofence paused!' });
+
+    const geofence = await db.getGeofenceSettings();
+    const statusEmoji = geofence.enabled ? '🟢 ACTIVE' : '🔴 DISABLED';
+
+    const text = `
+🛡 <b>Library GPS Geofence Controls</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏢 <b>Library:</b> ${geofence.name}
+📍 <b>Coordinates:</b> <code>${geofence.latitude.toFixed(6)}, ${geofence.longitude.toFixed(6)}</code>
+📏 <b>Allowed Radius:</b> <b>${geofence.radius_meters} Meters</b>
+🔒 <b>Anti-Proxy Protection:</b> ${statusEmoji}
+
+<i>Status changed to <b>${statusEmoji}</b>.</i>
+`;
+
+    const kb = new InlineKeyboard()
+      .text(geofence.radius_meters === 50 ? '🔘 50m (Strict)' : '50m (Strict)', 'geofence_radius_50')
+      .text(geofence.radius_meters === 75 ? '🔘 75m (Recommended)' : '75m (Recommended)', 'geofence_radius_75')
+      .text(geofence.radius_meters === 100 ? '🔘 100m' : '100m', 'geofence_radius_100')
+      .row()
+      .text(geofence.enabled ? '⏸ Pause Geofence' : '▶️ Enable Geofence', 'geofence_toggle')
+      .row()
+      .text('🔙 Back to Main Menu', 'menu_main');
+
+    await ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    await ctx.reply(`❌ Error toggling geofence: ${err.message}`);
+  }
 });
 
 // ==============================================================================

@@ -348,7 +348,61 @@ async function findStudentByPhone(rawPhone) {
   return data && data.length > 0 ? data[0] : null;
 }
 
-async function checkInStudent(studentId) {
+const DEFAULT_GEOFENCE = {
+  latitude: 33.617014,
+  longitude: 74.924696,
+  radius_meters: 75,
+  enabled: true,
+  name: 'Vertical Classes Library',
+};
+
+function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // Earth's radius in meters
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
+
+async function getGeofenceSettings() {
+  try {
+    const { data, error } = await supabase
+      .from('library_settings')
+      .select('value')
+      .eq('key', 'geofence')
+      .maybeSingle();
+    if (error || !data || !data.value) {
+      return DEFAULT_GEOFENCE;
+    }
+    return { ...DEFAULT_GEOFENCE, ...data.value };
+  } catch (err) {
+    console.error('getGeofenceSettings error:', err.message);
+    return DEFAULT_GEOFENCE;
+  }
+}
+
+async function updateGeofenceSettings(newSettings) {
+  const current = await getGeofenceSettings();
+  const merged = { ...current, ...newSettings };
+  const { data, error } = await supabase
+    .from('library_settings')
+    .upsert({
+      key: 'geofence',
+      value: merged,
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return merged;
+}
+
+async function checkInStudent(studentId, geoData = {}) {
   const student = await getStudentById(studentId);
   if (!student) throw new Error('Student not found');
 
@@ -373,19 +427,25 @@ async function checkInStudent(studentId) {
   }
 
   // Insert new check-in record
+  const insertPayload = {
+    student_id: student.id,
+    student_name: student.full_name,
+    phone: student.phone,
+    seat_number: student.seat_number,
+    date: todayStr,
+    check_in_time: new Date().toISOString(),
+    status: 'checked_in',
+  };
+
+  if (geoData.latitude != null) insertPayload.latitude = geoData.latitude;
+  if (geoData.longitude != null) insertPayload.longitude = geoData.longitude;
+  if (geoData.distanceMeters != null) insertPayload.distance_meters = geoData.distanceMeters;
+
   const { data: newLog, error } = await supabase
     .from('attendance_logs')
-    .insert({
-      student_id: student.id,
-      student_name: student.full_name,
-      phone: student.phone,
-      seat_number: student.seat_number,
-      date: todayStr,
-      check_in_time: new Date().toISOString(),
-      status: 'checked_in',
-    })
+    .insert(insertPayload)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
 
@@ -396,7 +456,7 @@ async function checkInStudent(studentId) {
   };
 }
 
-async function checkOutStudent(studentId) {
+async function checkOutStudent(studentId, geoData = {}) {
   const student = await getStudentById(studentId);
   if (!student) throw new Error('Student not found');
 
@@ -424,16 +484,22 @@ async function checkOutStudent(studentId) {
   const now = new Date();
   const diffMinutes = Math.max(1, Math.round((now - checkInTime) / 60000));
 
+  const updatePayload = {
+    check_out_time: now.toISOString(),
+    duration_minutes: diffMinutes,
+    status: 'checked_out',
+  };
+
+  if (geoData.latitude != null) updatePayload.check_out_latitude = geoData.latitude;
+  if (geoData.longitude != null) updatePayload.check_out_longitude = geoData.longitude;
+  if (geoData.distanceMeters != null) updatePayload.check_out_distance_meters = geoData.distanceMeters;
+
   const { data: updatedLog, error } = await supabase
     .from('attendance_logs')
-    .update({
-      check_out_time: now.toISOString(),
-      duration_minutes: diffMinutes,
-      status: 'checked_out',
-    })
+    .update(updatePayload)
     .eq('id', activeLog.id)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
 
@@ -566,4 +632,7 @@ module.exports = {
   getAdminByPhone,
   linkAdminPhone,
   getAllAdmins,
+  calculateDistanceMeters,
+  getGeofenceSettings,
+  updateGeofenceSettings,
 };
