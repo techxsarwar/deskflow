@@ -730,7 +730,8 @@ async function broadcastWifiCredentials({ students, wifiConfig, libraryName = 'V
     errors: [],
   };
 
-  for (const student of students) {
+  for (let i = 0; i < students.length; i++) {
+    const student = students[i];
     try {
       const res = await sendWifiCredentialsEmail({ student, wifiConfig, libraryName });
       summary.sent++;
@@ -750,6 +751,220 @@ async function broadcastWifiCredentials({ students, wifiConfig, libraryName = 'V
         error: err.message,
       });
     }
+
+    if (i < students.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
+  return summary;
+}
+
+function getAnnouncementHtml({ student, title, body, libraryName = 'Vertical Classes' }) {
+  const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const seatNo = student?.seat_number && student.seat_number !== 'Unassigned' ? student.seat_number : 'Assigned Study Desk';
+  
+  // Format body paragraphs
+  const formattedBody = (body || '')
+    .split('\n\n')
+    .map(para => `<p style="margin: 0 0 16px 0; line-height: 1.7; color: #334155;">${para.replace(/\n/g, '<br>')}</p>`)
+    .join('');
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} - ${libraryName}</title>
+</head>
+<body style="margin:0;padding:32px 16px;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;-webkit-font-smoothing:antialiased;">
+  
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:20px;border:1px solid #e2e8f0;box-shadow:0 4px 20px -2px rgba(15,23,42,0.06);overflow:hidden;">
+    
+    <!-- Top Header -->
+    <tr>
+      <td style="padding:32px 36px 20px 36px;border-bottom:1px solid #f1f5f9;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td>
+              <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:#0284c7;text-transform:uppercase;margin-bottom:4px;">
+                ${libraryName.toUpperCase()} &bull; STUDY LOUNGE
+              </div>
+              <div style="font-size:20px;font-weight:800;letter-spacing:-0.4px;color:#0f172a;">
+                Official Announcement
+              </div>
+            </td>
+            <td align="right" valign="top">
+              <span style="display:inline-block;padding:6px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:999px;font-size:12px;font-weight:700;color:#1d4ed8;letter-spacing:0.2px;">
+                📢 Member Notice &bull; ${dateStr}
+              </span>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Member Greeting -->
+    <tr>
+      <td style="padding:28px 36px 16px 36px;">
+        <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:6px;">
+          Hello ${student.full_name || 'Student'},
+        </div>
+        <div style="font-size:13.5px;color:#64748b;line-height:1.5;">
+          This is an official administrative notice broadcast to registered students of <b>${libraryName}</b> (Desk: <b>${seatNo}</b>).
+        </div>
+      </td>
+    </tr>
+
+    <!-- Announcement Box -->
+    <tr>
+      <td style="padding:0 36px 24px 36px;">
+        <div style="background:#f8fafc;border-radius:16px;padding:24px 26px;border:1px solid #e2e8f0;box-shadow:inset 0 1px 3px rgba(0,0,0,0.02);">
+          
+          <div style="font-size:18px;font-weight:800;color:#0f172a;line-height:1.4;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid #e2e8f0;">
+            ${title}
+          </div>
+
+          <div style="font-size:14.5px;color:#334155;line-height:1.7;">
+            ${formattedBody}
+          </div>
+
+        </div>
+      </td>
+    </tr>
+
+    <!-- Action / Advisory Notice -->
+    <tr>
+      <td style="padding:0 36px 28px 36px;">
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 18px;font-size:12.5px;color:#166534;line-height:1.6;">
+          💡 <b>Notice Advisory:</b> Please keep this update in mind during your study hours. If you have questions or require further assistance, please contact library administration at <a href="mailto:receipts@globalpulse24.in" style="color:#15803d;font-weight:700;text-decoration:none;">receipts@globalpulse24.in</a> or visit the front reception desk.
+        </div>
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="padding:20px 36px 28px 36px;background:#fafbfc;border-top:1px solid #f1f5f9;text-align:center;">
+        <div style="font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:0.5px;">
+          VERTICAL CLASSES STUDY LOUNGE &bull; DESKFLOW MANAGEMENT
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:#94a3b8;">
+          Sent to <b>${student.email}</b> on ${dateStr} &bull; Confidential Student Communication
+        </div>
+      </td>
+    </tr>
+
+  </table>
+
+</body>
+</html>
+  `;
+}
+
+async function sendAnnouncementEmail({ student, title, body, libraryName = 'Vertical Classes' }) {
+  if (!student?.email) {
+    throw new Error('Student does not have an email address configured.');
+  }
+
+  const html = getAnnouncementHtml({ student, title, body, libraryName });
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vertical Classes Library <receipts@globalpulse24.in>';
+
+  if (!process.env.RESEND_API_KEY || !resend) {
+    return {
+      success: true,
+      mock: true,
+      recipient: student.email,
+      studentName: student.full_name,
+      message: `Simulated announcement email sent to ${student.email}.`,
+    };
+  }
+
+  try {
+    const res = await resend.emails.send({
+      from: fromEmail,
+      to: [student.email],
+      subject: `📢 [${libraryName} Notice] ${title}`,
+      html: html,
+    });
+
+    if (res.error) {
+      if (
+        res.error.statusCode === 403 ||
+        res.error.status === 403 ||
+        res.error.message?.includes('testing emails') ||
+        res.error.message?.includes('only send testing emails')
+      ) {
+        console.warn(`Resend testing mode: Forwarding announcement to admin email for ${student.email}`);
+        const fallbackRes = await resend.emails.send({
+          from: fromEmail,
+          to: ['darsarwar1908@gmail.com'],
+          subject: `[Student Announcement - Forward to ${student.email}] ${title} — ${libraryName}`,
+          html: `<div style="background:#fef3c7;padding:12px;border-radius:8px;font-size:13px;color:#92400e;margin-bottom:16px;">
+            ⚠️ <b>Resend Sandbox Notice:</b> Delivered to admin email because custom domain is in testing mode. Please forward to <b>${student.email}</b>.
+          </div>` + html,
+        });
+
+        return {
+          success: true,
+          sandbox: true,
+          data: fallbackRes.data,
+          recipient: 'darsarwar1908@gmail.com',
+          intendedRecipient: student.email,
+          studentName: student.full_name,
+        };
+      }
+
+      throw new Error(res.error.message || 'Resend Announcement dispatch failed');
+    }
+
+    return {
+      success: true,
+      data: res.data,
+      recipient: student.email,
+      studentName: student.full_name,
+    };
+  } catch (error) {
+    console.error(`Failed to send announcement email to ${student.email}:`, error);
+    throw error;
+  }
+}
+
+async function broadcastAnnouncement({ students, title, body, libraryName = 'Vertical Classes' }) {
+  const summary = {
+    total: students.length,
+    sent: 0,
+    failed: 0,
+    recipients: [],
+    errors: [],
+  };
+
+  for (let i = 0; i < students.length; i++) {
+    const student = students[i];
+    try {
+      const res = await sendAnnouncementEmail({ student, title, body, libraryName });
+      summary.sent++;
+      summary.recipients.push({
+        id: student.id,
+        name: student.full_name,
+        email: student.email,
+        seat: student.seat_number,
+        sandbox: res.sandbox || false,
+      });
+    } catch (err) {
+      summary.failed++;
+      summary.errors.push({
+        id: student.id,
+        name: student.full_name,
+        email: student.email,
+        error: err.message,
+      });
+    }
+
+    // 250ms spacing between emails to ensure 100% compliant rate-limiting for 40+ students
+    if (i < students.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
   }
 
   return summary;
@@ -760,7 +975,10 @@ module.exports = {
   sendReminderEmail,
   sendWifiCredentialsEmail,
   broadcastWifiCredentials,
+  sendAnnouncementEmail,
+  broadcastAnnouncement,
   getReceiptHtml,
   getReminderHtml,
   getWifiCredentialsHtml,
+  getAnnouncementHtml,
 };

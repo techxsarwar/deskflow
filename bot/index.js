@@ -6,7 +6,14 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 require('dotenv').config();
 
 const db = require('./services/db');
-const { sendReceiptEmail, sendReminderEmail, sendWifiCredentialsEmail, broadcastWifiCredentials } = require('./services/email');
+const {
+  sendReceiptEmail,
+  sendReminderEmail,
+  sendWifiCredentialsEmail,
+  broadcastWifiCredentials,
+  sendAnnouncementEmail,
+  broadcastAnnouncement,
+} = require('./services/email');
 const { sendPhoneToken, verifyPhoneToken, sendTelegramOtp, verifyTelegramOtp } = require('./services/otp');
 const { getISTTime, getISTDate, getISTDateString } = require('./services/time');
 
@@ -48,6 +55,8 @@ function getMainMenuKeyboard() {
     .row()
     .text('🛡 GPS Geofence (75m)', 'menu_geofence')
     .text('📶 WiFi Credentials', 'menu_wifi')
+    .row()
+    .text('📢 Post Announcement', 'menu_announcement')
     .row();
 
   if (WEB_APP_URL) {
@@ -189,10 +198,88 @@ bot.command(['wifi', 'wificreds'], async (ctx) => {
   await renderWifiMenu(ctx, false);
 });
 
-// Interactive Text Handler for Custom Amount Input & WiFi Setup
+bot.command(['announce', 'broadcast'], async (ctx) => {
+  await renderAnnouncementMenu(ctx, false);
+});
+
+// Interactive Text Handler for Custom Amount Input, WiFi Setup & Announcements
 bot.on('message:text', async (ctx, next) => {
   const chatId = ctx.chat.id;
   const state = adminFlowState.get(chatId);
+
+  // Announcement Flow - Step 1: Subject / Title
+  if (state && state.action === 'awaiting_announcement_subject') {
+    const rawSubject = ctx.message.text.trim();
+    if (!rawSubject || rawSubject.length < 3) {
+      return ctx.reply('⚠️ <b>Subject Too Short!</b>\nPlease type a descriptive announcement title (at least 3 characters):', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('🔙 Cancel', 'menu_announcement'),
+      });
+    }
+
+    adminFlowState.set(chatId, {
+      action: 'awaiting_announcement_body',
+      subject: rawSubject,
+    });
+
+    return ctx.reply(`
+📢 <b>Post Announcement to Students (Step 2 of 2)</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📌 <b>Subject:</b> <code>${rawSubject}</code>
+
+💬 <b>Now reply with the full Announcement Message:</b>
+<i>(You can write multiple paragraphs, bullet points, schedules, notes, or instructions.)</i>
+`, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('🔙 Cancel', 'menu_announcement'),
+    });
+  }
+
+  // Announcement Flow - Step 2: Message Body
+  if (state && state.action === 'awaiting_announcement_body') {
+    const rawBody = ctx.message.text.trim();
+    if (!rawBody || rawBody.length < 5) {
+      return ctx.reply('⚠️ <b>Message Too Short!</b>\nPlease type a clear message for students (at least 5 characters):', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('🔙 Cancel', 'menu_announcement'),
+      });
+    }
+
+    const subject = state.subject;
+    adminFlowState.set(chatId, {
+      action: 'announcement_preview',
+      subject: subject,
+      body: rawBody,
+    });
+
+    const students = await db.getActiveStudentsForWifi();
+
+    const previewText = `
+📢 <b>Announcement Preview & Confirmation</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📌 <b>Subject:</b>
+<b>${subject}</b>
+
+📝 <b>Message:</b>
+${rawBody}
+
+👥 <b>Recipients:</b> <b>${students.length} active students</b> will receive this individual branded email.
+📧 <b>Sender:</b> Vertical Classes Library &lt;receipts@globalpulse24.in&gt;
+
+👇 <b>Ready to send to all ${students.length} students?</b>
+`;
+
+    const kb = new InlineKeyboard()
+      .text('🚀 Broadcast to All Students Now', 'announcement_broadcast_now')
+      .row()
+      .text('✏️ Re-compose', 'announcement_compose_start')
+      .text('🔙 Cancel', 'menu_announcement');
+
+    return ctx.reply(previewText, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  }
 
   // WiFi Setup Flow - Step 1: SSID (Network Name)
   if (state && state.action === 'awaiting_wifi_ssid') {
@@ -1830,6 +1917,216 @@ ${errorLines}
     await ctx.reply(`❌ Broadcast failed: ${err.message}`, {
       reply_markup: new InlineKeyboard().text('🔙 Back to WiFi Menu', 'menu_wifi'),
     });
+  }
+});
+
+// ==============================================================================
+// 8.6. Announcements & Email Broadcast
+// ==============================================================================
+
+async function renderAnnouncementMenu(ctx, edit = true) {
+  try {
+    const students = await db.getActiveStudentsForWifi();
+    const history = await db.getAnnouncementsHistory();
+    const latest = history.length > 0 ? history[0] : null;
+
+    let historySnippet = '';
+    if (latest) {
+      const timeStr = new Date(latest.created_at).toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+      historySnippet = `
+🕒 <b>Latest Broadcast (${timeStr}):</b>
+📌 <i>"${latest.title}"</i> (Delivered to ${latest.sent_count} students)
+`;
+    }
+
+    const text = `
+📢 <b>Student Announcements & Notice Hub</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Broadcast official notices, schedule revisions, holiday alerts, and guidelines directly to students' email inboxes.
+
+👥 <b>Active Recipients:</b> <b>${students.length} students</b> with verified emails
+${historySnippet}
+👇 <i>Choose an action below:</i>
+`;
+
+    const kb = new InlineKeyboard()
+      .text('✍️ Compose New Announcement', 'announcement_compose_start')
+      .row();
+
+    if (history.length > 0) {
+      kb.text(`📜 Announcement History (${history.length})`, 'announcement_history').row();
+    }
+
+    kb.text('🔙 Back to Main Menu', 'menu_main');
+
+    if (edit && ctx.callbackQuery) {
+      await safeEdit(ctx, text, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    } else {
+      await ctx.reply(text, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    }
+  } catch (err) {
+    console.error('renderAnnouncementMenu error:', err);
+    await ctx.reply(`❌ Error loading announcement hub: ${err.message}`);
+  }
+}
+
+bot.callbackQuery('menu_announcement', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await renderAnnouncementMenu(ctx, true);
+});
+
+bot.callbackQuery('announcement_compose_start', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  adminFlowState.set(ctx.chat.id, { action: 'awaiting_announcement_subject' });
+
+  const text = `
+📢 <b>Post Announcement to Students (Step 1/2)</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💬 <b>Please reply with the Announcement Title / Subject:</b>
+<i>(Example: "Holiday Notice: Library Timings for Eid", "AC Maintenance Notice", "Monthly Study Pass Renewal Reminder")</i>
+`;
+
+  const kb = new InlineKeyboard().text('🔙 Cancel', 'menu_announcement');
+
+  await ctx.reply(text, {
+    parse_mode: 'HTML',
+    reply_markup: kb,
+  });
+});
+
+bot.callbackQuery('announcement_broadcast_now', async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Starting announcement broadcast...' });
+  const chatId = ctx.chat.id;
+  const state = adminFlowState.get(chatId);
+
+  if (!state || !state.subject || !state.body) {
+    return ctx.reply('⚠️ No active announcement draft found. Please start again:', {
+      reply_markup: new InlineKeyboard().text('✍️ Compose Announcement', 'announcement_compose_start'),
+    });
+  }
+
+  const { subject, body } = state;
+  adminFlowState.delete(chatId);
+
+  try {
+    const students = await db.getActiveStudentsForWifi();
+    if (students.length === 0) {
+      return ctx.reply('⚠️ No active students with email found.');
+    }
+
+    const statusMsg = await ctx.reply(
+      `⏳ <b>Broadcasting Announcement to ${students.length} students via Resend...</b>\n<i>Sending individual branded emails with safe rate pacing...</i>`,
+      { parse_mode: 'HTML' }
+    );
+
+    const summary = await broadcastAnnouncement({
+      students,
+      title: subject,
+      body: body,
+      libraryName: 'Vertical Classes',
+    });
+
+    // Record in database history
+    await db.recordAnnouncement({
+      title: subject,
+      body: body,
+      author: ctx.from?.first_name || 'Admin',
+      sentCount: summary.sent,
+    });
+
+    const recipientLines = summary.recipients
+      .map((r) => `• ✅ <b>${r.name}</b> (<code>${r.email}</code>) — Desk: <i>${r.seat || 'Assigned'}</i>`)
+      .join('\n');
+
+    const errorLines =
+      summary.errors.length > 0
+        ? `\n⚠️ <b>Errors (${summary.failed}):</b>\n` +
+          summary.errors.map((e) => `• ❌ ${e.name} (${e.email}): ${e.error}`).join('\n')
+        : '';
+
+    const finalText = `
+🎉 <b>Announcement Broadcast Complete!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📌 <b>Subject:</b> ${subject}
+
+📊 <b>Delivery Report:</b>
+• <b>Total Students:</b> ${summary.total}
+• <b>Successfully Delivered:</b> <b>${summary.sent} individual emails</b>
+${summary.failed > 0 ? `• <b>Failed:</b> ${summary.failed}\n` : ''}
+<b>Recipients:</b>
+${recipientLines}
+${errorLines}
+📨 <i>Each student received their own private, official branded announcement email.</i>
+`;
+
+    const kb = new InlineKeyboard()
+      .text('📢 Announcement Hub', 'menu_announcement')
+      .text('🔙 Main Menu', 'menu_main');
+
+    await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, finalText, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    console.error('announcement_broadcast_now error:', err);
+    await ctx.reply(`❌ Announcement broadcast failed: ${err.message}`, {
+      reply_markup: new InlineKeyboard().text('🔙 Back to Announcement Hub', 'menu_announcement'),
+    });
+  }
+});
+
+bot.callbackQuery('announcement_history', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  try {
+    const history = await db.getAnnouncementsHistory();
+    if (history.length === 0) {
+      return ctx.reply('ℹ️ No announcements broadcast history recorded yet.', {
+        reply_markup: new InlineKeyboard().text('🔙 Back', 'menu_announcement'),
+      });
+    }
+
+    const items = history
+      .slice(0, 5)
+      .map((h, i) => {
+        const d = new Date(h.created_at).toLocaleDateString('en-IN', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+        return `<b>${i + 1}. ${h.title}</b>\n📅 ${d} &bull; Delivered to: <b>${h.sent_count} students</b>\n<i>"${h.body.slice(0, 100)}${h.body.length > 100 ? '...' : ''}"</i>`;
+      })
+      .join('\n\n');
+
+    const text = `
+📜 <b>Past Announcement Broadcasts</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${items}
+`;
+
+    const kb = new InlineKeyboard()
+      .text('✍️ Compose New', 'announcement_compose_start')
+      .row()
+      .text('🔙 Back to Hub', 'menu_announcement');
+
+    await safeEdit(ctx, text, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    await ctx.reply(`❌ Error loading history: ${err.message}`);
   }
 });
 

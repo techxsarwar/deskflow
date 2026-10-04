@@ -460,6 +460,48 @@ async function getActiveStudentsForWifi() {
   return data || [];
 }
 
+async function getAnnouncementsHistory() {
+  try {
+    const { data, error } = await supabase
+      .from('library_settings')
+      .select('value')
+      .eq('key', 'announcements')
+      .maybeSingle();
+    if (error || !data || !data.value) {
+      return [];
+    }
+    return Array.isArray(data.value.history) ? data.value.history : [];
+  } catch (err) {
+    console.error('getAnnouncementsHistory error:', err.message);
+    return [];
+  }
+}
+
+async function recordAnnouncement({ title, body, author = 'Admin', sentCount = 0 }) {
+  const history = await getAnnouncementsHistory();
+  const newEntry = {
+    id: `ANN-${Date.now()}`,
+    title,
+    body,
+    author,
+    sent_count: sentCount,
+    created_at: new Date().toISOString(),
+  };
+
+  const updatedHistory = [newEntry, ...history].slice(0, 20);
+
+  await supabase
+    .from('library_settings')
+    .upsert({
+      key: 'announcements',
+      value: { history: updatedHistory },
+      description: 'Log of broadcast announcements sent to students',
+      updated_at: new Date().toISOString(),
+    });
+
+  return newEntry;
+}
+
 async function checkInStudent(studentId, geoData = {}) {
   const student = await getStudentById(studentId);
   if (!student) throw new Error('Student not found');
@@ -696,4 +738,6 @@ module.exports = {
   getWifiCredentials,
   updateWifiCredentials,
   getActiveStudentsForWifi,
+  getAnnouncementsHistory,
+  recordAnnouncement,
 };
