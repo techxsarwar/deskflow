@@ -29,6 +29,13 @@ if (!BOT_TOKEN) {
 
 const bot = new Bot(BOT_TOKEN);
 
+bot.use((ctx, next) => {
+  const from = ctx.from?.first_name || ctx.from?.id || 'Unknown';
+  const text = ctx.message?.text || ctx.callbackQuery?.data || (ctx.message?.contact ? 'contact' : ctx.message?.location ? 'location' : 'update');
+  console.log(`📩 [Telegram Update] From: ${from} (Chat ${ctx.chat?.id}) -> ${text}`);
+  return next();
+});
+
 // In-memory conversation state for interactive admin input (e.g. custom fee amounts)
 const adminFlowState = new Map();
 // In-memory state for 2-step attendance verification (Contact -> Location)
