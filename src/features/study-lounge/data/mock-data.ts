@@ -47,25 +47,27 @@ export const INITIAL_STUDENTS: Student[] = []
 
 export const INITIAL_TRANSACTIONS: FeeTransaction[] = []
 
-// 30 Clean Private Desks ready for real student occupancy organized by Hall Name
+// 60 Clean Private Desks ready for real student occupancy organized by Hall Name (Black Hall & Brown Hall)
 export const INITIAL_SEATS: LoungeSeat[] = [
-  ...Array.from({ length: 20 }, (_, i) => {
-    const seatNumber = `D-${String(i + 1).padStart(2, '0')}`
+  ...Array.from({ length: 30 }, (_, i) => {
+    const num = i + 1
+    const seatNumber = `Black Hall - Desk ${num}`
     return {
-      id: `SEAT-${seatNumber}`,
+      id: `SEAT-BLACK-HALL-DESK-${num}`,
       seatNumber,
       type: 'dedicated' as SeatType,
-      section: 'Hall A',
+      section: 'Black Hall',
       status: 'available' as const,
     }
   }),
-  ...Array.from({ length: 10 }, (_, i) => {
-    const seatNumber = `D-${String(21 + i).padStart(2, '0')}`
+  ...Array.from({ length: 30 }, (_, i) => {
+    const num = i + 1
+    const seatNumber = `Brown Hall - Desk ${num}`
     return {
-      id: `SEAT-${seatNumber}`,
+      id: `SEAT-BROWN-HALL-DESK-${num}`,
       seatNumber,
       type: 'dedicated' as SeatType,
-      section: 'Hall B',
+      section: 'Brown Hall',
       status: 'available' as const,
     }
   }),

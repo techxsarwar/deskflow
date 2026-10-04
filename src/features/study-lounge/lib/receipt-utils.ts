@@ -1,5 +1,6 @@
 import { FeeTransaction, Student, LoungeSeat } from '../types'
 import { SHIFT_DETAILS } from '../data/mock-data'
+import { getDeskLabel } from './seat-utils'
 
 /**
  * Normalizes an Indian or international phone number for WhatsApp URLs.
@@ -358,9 +359,9 @@ export function buildSeatingArrangementBroadcastMessage({
         const shiftLabel = shiftKey
           ? ` [${SHIFT_DETAILS[shiftKey]?.label || shiftKey}]`
           : ''
-        return `• 🪑 *Desk ${seat.seatNumber}:* ${studentName}${regNo}${shiftLabel}`
+        return `• 🪑 *${getDeskLabel(seat.seatNumber, sectionName)}:* ${studentName}${regNo}${shiftLabel}`
       } else {
-        return `• 🟢 *Desk ${seat.seatNumber}:* _AVAILABLE VACANT_`
+        return `• 🟢 *${getDeskLabel(seat.seatNumber, sectionName)}:* _AVAILABLE VACANT_`
       }
     })
 

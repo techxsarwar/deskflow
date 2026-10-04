@@ -22,6 +22,7 @@ import { LoungeSeat, Student } from '../types'
 import { useStudyLoungeStore } from '../store/study-lounge-store'
 import { SHIFT_DETAILS } from '../data/mock-data'
 import { getMembershipLifecycle } from '../lib/membership-utils'
+import { getDeskDisplayNumber, getDeskFullLabel, getDeskLabel } from '../lib/seat-utils'
 import { AddSeatDialog } from './add-seat-dialog'
 import { ShareSeatingDialog } from './share-seating-dialog'
 import { RenewMembershipDialog } from './renew-membership-dialog'
@@ -250,7 +251,7 @@ export function SeatsLayoutView() {
                             : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:border-emerald-500'
                         }`}
                       >
-                        <span className='font-mono font-bold text-xs sm:text-sm'>{seat.seatNumber}</span>
+                        <span className='font-mono font-bold text-xs sm:text-sm'>{getDeskDisplayNumber(seat.seatNumber, hallName)}</span>
                         <Armchair
                           className={`h-5 w-5 sm:h-6 sm:w-6 my-1 sm:my-1.5 ${
                             isOccupied ? (isOverdue ? 'text-rose-600' : 'text-primary') : 'text-emerald-600'
@@ -279,7 +280,7 @@ export function SeatsLayoutView() {
             <Building2 className='h-10 w-10 text-muted-foreground mx-auto' />
             <h4 className='font-bold text-base'>No Halls or Desks configured yet</h4>
             <p className='text-xs text-muted-foreground max-w-sm mx-auto'>
-              Create your first Hall (e.g., Hall A) and add private desks to build your library seating arrangement.
+              Create your first Hall (e.g., Black Hall, Brown Hall) and add private desks to build your library seating arrangement.
             </p>
             <AddSeatDialog />
           </div>
@@ -292,7 +293,7 @@ export function SeatsLayoutView() {
           <DialogHeader>
             <DialogTitle className='flex items-center gap-2'>
               <Armchair className='h-5 w-5 text-primary' />
-              Private Desk {selectedSeat?.seatNumber} Details
+              {selectedSeat ? getDeskFullLabel(selectedSeat.seatNumber, selectedSeat.section) : 'Desk'} Details
             </DialogTitle>
           </DialogHeader>
 
@@ -301,7 +302,11 @@ export function SeatsLayoutView() {
               <div className='rounded-lg border p-4 bg-muted/30 text-sm space-y-2'>
                 <div className='flex justify-between'>
                   <span className='text-muted-foreground'>Hall Name:</span>
-                  <span className='font-bold text-foreground'>{selectedSeat.section || 'Hall A'}</span>
+                  <span className='font-bold text-foreground'>{selectedSeat.section || 'Main Hall'}</span>
+                </div>
+                <div className='flex justify-between'>
+                  <span className='text-muted-foreground'>Desk Number:</span>
+                  <span className='font-mono font-bold text-foreground'>{getDeskLabel(selectedSeat.seatNumber, selectedSeat.section)}</span>
                 </div>
                 <div className='flex justify-between'>
                   <span className='text-muted-foreground'>Desk Category:</span>
@@ -488,7 +493,7 @@ export function SeatsLayoutView() {
                               className='h-7 text-xs shrink-0'
                               onClick={() => {
                                 handleAssignToStudent(s.id)
-                                toast.success(`Assigned Private Desk ${selectedSeat.seatNumber} to ${s.fullName}!`)
+                                toast.success(`Assigned ${getDeskFullLabel(selectedSeat.seatNumber, selectedSeat.section)} to ${s.fullName}!`)
                               }}
                             >
                               Assign Desk
@@ -511,13 +516,13 @@ export function SeatsLayoutView() {
                   onClick={() => {
                     if (
                       confirm(
-                        `Are you sure you want to remove Private Desk ${selectedSeat.seatNumber} from ${selectedSeat.section || 'the floor plan'}?`
+                        `Are you sure you want to remove ${getDeskFullLabel(selectedSeat.seatNumber, selectedSeat.section)} from floor plan?`
                       )
                     ) {
                       deleteSeat(selectedSeat.seatNumber)
                       setAssignStudentModalOpen(false)
                       toast.success(
-                        `Removed Private Desk ${selectedSeat.seatNumber} from floor plan.`
+                        `Removed ${getDeskFullLabel(selectedSeat.seatNumber, selectedSeat.section)} from floor plan.`
                       )
                     }
                   }}

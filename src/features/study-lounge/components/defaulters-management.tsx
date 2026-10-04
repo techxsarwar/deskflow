@@ -26,6 +26,7 @@ import {
 import { Student, FeeTransaction } from '../types'
 import { SHIFT_DETAILS } from '../data/mock-data'
 import { useStudyLoungeStore } from '../store/study-lounge-store'
+import { getDeskFullLabel } from '../lib/seat-utils'
 import {
   buildIndividualDueReminderMessage,
   getWhatsAppShareUrl,
@@ -364,10 +365,7 @@ export function DefaultersManagement() {
                           <td className='py-3 px-3'>
                             <div className='font-medium text-foreground flex items-center gap-1 text-xs'>
                               <Armchair className='h-3.5 w-3.5 text-primary' />
-                              <span>{student.seatNumber || 'Unassigned'}</span>
-                              <span className='text-[10px] text-muted-foreground'>
-                                (Private Desk)
-                              </span>
+                              <span>{student.seatNumber ? getDeskFullLabel(student.seatNumber) : 'Unassigned'}</span>
                             </div>
                             <span className='text-xs text-muted-foreground block mt-0.5'>
                               {shiftInfo.label}

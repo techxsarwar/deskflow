@@ -153,7 +153,7 @@ export const useStudyLoungeStore = create<StudyLoungeState>()(
           studyGoal: data.studyGoal,
           shift: data.shift,
           seatType: data.seatType,
-          seatNumber: data.seatNumber || (isOnline ? 'Unassigned' : 'D-01'),
+          seatNumber: data.seatNumber || 'Unassigned',
           lockerNumber: data.lockerNumber,
           membershipPlan: data.membershipPlan,
           planAmount: data.planAmount,
@@ -324,7 +324,8 @@ export const useStudyLoungeStore = create<StudyLoungeState>()(
         const student = get().students.find((s) => s.id === id)
         if (!student) return
 
-        const assignedSeat = seatNumber || (student.seatNumber !== 'Unassigned' ? student.seatNumber : 'D-02')
+        const availableSeat = get().seats.find((s) => s.status === 'available')?.seatNumber
+        const assignedSeat = seatNumber || (student.seatNumber && student.seatNumber !== 'Unassigned' ? student.seatNumber : (availableSeat || 'Unassigned'))
 
         set((state) => {
           const updatedStudents = state.students.map((s) =>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   BookOpen,
   CheckCircle2,
@@ -20,6 +20,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { supabaseService } from '@/features/study-lounge/lib/supabase-service'
+import { getDeskDisplayNumber, getDeskFullLabel } from '@/features/study-lounge/lib/seat-utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -49,8 +50,6 @@ export function PublicStudentRegistration() {
   const [studyGoal, setStudyGoal] = useState('')
   const [shift, setShift] = useState<ShiftType>('fullday')
   const [selectedSeatNumber, setSelectedSeatNumber] = useState<string>('')
-  const [seatType, setSeatType] = useState<SeatType>('dedicated')
-  const [seatCategoryFilter, setSeatCategoryFilter] = useState<'all' | 'dedicated' | 'flexible'>('all')
   const [membershipPlan, setMembershipPlan] = useState<MembershipPlan>('monthly')
   const [needLocker, setNeedLocker] = useState(true)
   const [agreedToRules, setAgreedToRules] = useState(true)
@@ -82,12 +81,21 @@ export function PublicStudentRegistration() {
   const selectedPlanPrice = PLAN_PRICING[membershipPlan]?.basePrice || 1000
   const totalPrice = selectedPlanPrice
 
-  // Filter seats
-  const dedicatedSeats = seats.filter((s) => s.type === 'dedicated')
-  const flexibleSeats = seats.filter((s) => s.type === 'flexible')
+  // Dynamically group all Private Desks by Hall Name (e.g. Black Hall, Brown Hall)
+  const halls = useMemo(() => {
+    const map = new Map<string, LoungeSeat[]>()
+    seats.forEach((seat) => {
+      const hallName = seat.section?.trim() || 'Main Hall'
+      if (!map.has(hallName)) {
+        map.set(hallName, [])
+      }
+      map.get(hallName)!.push(seat)
+    })
+    return Array.from(map.entries()).sort(([a], [b]) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    )
+  }, [seats])
 
-  const vacantDedicated = dedicatedSeats.filter((s) => s.status === 'available')
-  const vacantFlexible = flexibleSeats.filter((s) => s.status === 'available')
   const totalVacant = seats.filter((s) => s.status === 'available').length
 
   const selectedSeatObj = seats.find((s) => s.seatNumber === selectedSeatNumber)
@@ -97,7 +105,6 @@ export function PublicStudentRegistration() {
       return
     }
     setSelectedSeatNumber(seat.seatNumber)
-    setSeatType(seat.type)
     setSelectionError(null)
   }
 
@@ -144,7 +151,7 @@ export function PublicStudentRegistration() {
     end.setMonth(end.getMonth() + months)
     const endDate = end.toISOString().split('T')[0]
 
-    const effectiveSeatType = selectedSeatObj ? selectedSeatObj.type : seatType
+    const effectiveSeatType: SeatType = selectedSeatObj ? selectedSeatObj.type : 'dedicated'
 
     const newStudent = addStudent({
       fullName: fullName.trim(),
@@ -187,8 +194,6 @@ export function PublicStudentRegistration() {
     setPhotoPreview(null)
     setShift('fullday')
     setSelectedSeatNumber('')
-    setSeatType('dedicated')
-    setSeatCategoryFilter('all')
     setMembershipPlan('monthly')
     setNeedLocker(true)
     setSelectionError(null)
@@ -207,7 +212,7 @@ export function PublicStudentRegistration() {
             </div>
             <h1 className='text-2xl font-bold tracking-tight'>Admission & Desk Reserved!</h1>
             <p className='text-sm text-muted-foreground mt-1'>
-              Welcome to <strong>Vertical Classes Library</strong>. Your study desk <strong>{submittedStudent.seatNumber}</strong> is locked in your name.
+              Welcome to <strong>Vertical Classes Library</strong>. Your study desk <strong>{getDeskFullLabel(submittedStudent.seatNumber)}</strong> is locked in your name.
             </p>
           </div>
 
@@ -268,7 +273,7 @@ export function PublicStudentRegistration() {
                       Reserved Study Cabin / Desk
                     </span>
                     <span className='text-xl font-black text-emerald-700 dark:text-emerald-300 font-mono'>
-                      {submittedStudent.seatNumber}
+                      {getDeskFullLabel(submittedStudent.seatNumber)}
                     </span>
                   </div>
                   <Badge className='bg-emerald-600 text-white font-semibold text-xs py-1 px-2.5'>
@@ -313,7 +318,7 @@ export function PublicStudentRegistration() {
                 <Sparkles className='h-4 w-4' /> Next Steps to Begin Studying:
               </h4>
               <p className='text-muted-foreground'>
-                1. Your desk <strong>{submittedStudent.seatNumber}</strong> is locked under your name in our library database.
+                1. Your desk <strong>{getDeskFullLabel(submittedStudent.seatNumber)}</strong> is locked under your name in our library database.
               </p>
               <p className='text-muted-foreground'>
                 2. Visit reception and quote your Registration No: <strong>{submittedStudent.regNo}</strong> or phone <strong>{submittedStudent.phone}</strong>.
@@ -567,7 +572,7 @@ export function PublicStudentRegistration() {
                 </RadioGroup>
               </div>
 
-              {/* Section 3: Select Your Vacant Cabin / Desk */}
+              {/* Section 3: Select Your Vacant Private Cabin / Desk by Hall */}
               <div id='seat-selection-section' className='space-y-4'>
                 <div className='flex flex-wrap items-center justify-between gap-2 border-b pb-2'>
                   <div className='flex items-center gap-2 text-primary'>
@@ -578,35 +583,34 @@ export function PublicStudentRegistration() {
                       Select Your Vacant Study Cabin / Desk *
                     </h3>
                   </div>
-                  <Badge variant='outline' className='text-emerald-600 border-emerald-300 gap-1.5 text-xs'>
+                  <Badge variant='outline' className='text-emerald-600 border-emerald-300 gap-1.5 text-xs font-semibold'>
                     <span className='h-2 w-2 rounded-full bg-emerald-500 animate-pulse' />
-                    {totalVacant} Vacant Desks Available
+                    {totalVacant} Vacant Cabins Available
                   </Badge>
                 </div>
 
                 <p className='text-xs text-muted-foreground'>
-                  Choose your personal study desk below. Click any vacant green desk to reserve it immediately.
+                  Choose your personal study cabin / desk below. Select your preferred Hall and click any vacant green desk to claim your seat.
                 </p>
 
                 {/* Selected Desk Status Banner */}
                 {selectedSeatNumber && selectedSeatObj ? (
                   <div className='rounded-xl border-2 border-primary bg-primary/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs'>
                     <div className='flex items-center gap-3'>
-                      <div className='flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold font-mono text-lg shadow-sm'>
-                        {selectedSeatNumber}
+                      <div className='flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold font-mono text-base shadow-sm'>
+                        {getDeskDisplayNumber(selectedSeatNumber, selectedSeatObj.section)}
                       </div>
                       <div>
                         <div className='flex items-center gap-2'>
                           <span className='font-bold text-sm text-foreground'>
-                            {selectedSeatObj.type === 'dedicated' ? 'Dedicated Study Cabin / Desk' : 'Flexible Desk'}{' '}
-                            {selectedSeatNumber}
+                            {getDeskFullLabel(selectedSeatNumber, selectedSeatObj.section)}
                           </span>
                           <Badge className='bg-emerald-600 text-white hover:bg-emerald-700 text-[10px] px-2 py-0.5'>
                             ✓ Selected & Vacant
                           </Badge>
                         </div>
                         <p className='text-xs text-muted-foreground mt-0.5'>
-                          {selectedSeatObj.section} • Reserved exclusively for you upon form submission.
+                          {selectedSeatObj.section} • Reserved exclusively for you upon admission.
                         </p>
                       </div>
                     </div>
@@ -623,7 +627,7 @@ export function PublicStudentRegistration() {
                 ) : (
                   <div className='rounded-xl border border-dashed border-muted-foreground/30 bg-muted/20 p-4 text-center'>
                     <p className='text-xs font-medium text-muted-foreground flex items-center justify-center gap-1.5'>
-                      <Sparkles className='h-4 w-4 text-primary' /> Click on any vacant green study desk below to claim your seat
+                      <Sparkles className='h-4 w-4 text-primary' /> Click on any vacant green desk below to claim your seat
                     </p>
                   </div>
                 )}
@@ -635,38 +639,6 @@ export function PublicStudentRegistration() {
                     {selectionError}
                   </div>
                 )}
-
-                {/* Filter Tabs */}
-                <div className='flex flex-wrap gap-2 pt-1'>
-                  <Button
-                    type='button'
-                    variant={seatCategoryFilter === 'all' ? 'default' : 'outline'}
-                    size='sm'
-                    className='text-xs h-8'
-                    onClick={() => setSeatCategoryFilter('all')}
-                  >
-                    All Desks ({totalVacant} Vacant)
-                  </Button>
-                  <Button
-                    type='button'
-                    variant={seatCategoryFilter === 'dedicated' ? 'default' : 'outline'}
-                    size='sm'
-                    className='text-xs h-8 gap-1.5'
-                    onClick={() => setSeatCategoryFilter('dedicated')}
-                  >
-                    <Armchair className='h-3.5 w-3.5' />
-                    Dedicated Silent Desks ({vacantDedicated.length} Vacant)
-                  </Button>
-                  <Button
-                    type='button'
-                    variant={seatCategoryFilter === 'flexible' ? 'default' : 'outline'}
-                    size='sm'
-                    className='text-xs h-8'
-                    onClick={() => setSeatCategoryFilter('flexible')}
-                  >
-                    Flexible Desks ({vacantFlexible.length} Vacant)
-                  </Button>
-                </div>
 
                 {/* Legend */}
                 <div className='flex items-center gap-4 text-[11px] text-muted-foreground pt-1'>
@@ -681,87 +653,83 @@ export function PublicStudentRegistration() {
                   </span>
                 </div>
 
-                {/* 1. Dedicated Desks Grid */}
-                {(seatCategoryFilter === 'all' || seatCategoryFilter === 'dedicated') && (
-                  <div className='space-y-2 pt-2'>
-                    <div className='flex items-center justify-between'>
-                      <span className='text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5'>
-                        <Armchair className='h-4 w-4' /> Main Silent Hall (Dedicated Study Cabins / Desks)
-                      </span>
-                      <span className='text-[11px] text-muted-foreground'>
-                        {vacantDedicated.length} of {dedicatedSeats.length} Vacant
-                      </span>
-                    </div>
-                    <div className='grid grid-cols-3 sm:grid-cols-6 md:grid-cols-10 gap-2'>
-                      {dedicatedSeats.map((seat) => {
-                        const isSelected = selectedSeatNumber === seat.seatNumber
-                        const isOccupied = seat.status === 'occupied'
-                        return (
-                          <button
-                            type='button'
-                            key={seat.id}
-                            disabled={isOccupied}
-                            onClick={() => handleSeatClick(seat)}
-                            className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-between text-center transition-all ${
-                              isSelected
-                                ? 'border-primary bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 scale-105 shadow-md z-10'
-                                : isOccupied
-                                  ? 'border-muted bg-muted/40 text-muted-foreground opacity-45 cursor-not-allowed'
-                                  : 'border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-600 hover:bg-emerald-500/15 cursor-pointer text-foreground'
-                            }`}
-                          >
-                            <span className='font-mono font-bold text-xs'>{seat.seatNumber}</span>
-                            <Armchair className={`h-4 w-4 my-1 ${isSelected ? 'text-primary-foreground' : isOccupied ? 'text-muted-foreground' : 'text-emerald-600'}`} />
-                            <span className='text-[9px] font-semibold block'>
-                              {isSelected ? '✓ Picked' : isOccupied ? 'Occupied' : 'Vacant'}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
+                {/* Dynamically Render Each Hall with Total Cabins & Desks */}
+                <div className='space-y-6 pt-2'>
+                  {halls.map(([hallName, hallSeats]) => {
+                    const hallVacant = hallSeats.filter((s) => s.status === 'available').length
 
-                {/* 2. Flexible Desks Grid */}
-                {(seatCategoryFilter === 'all' || seatCategoryFilter === 'flexible') && (
-                  <div className='space-y-2 pt-2'>
-                    <div className='flex items-center justify-between'>
-                      <span className='text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5'>
-                        <Sparkles className='h-4 w-4' /> Flexi Open Zone Desks
-                      </span>
-                      <span className='text-[11px] text-muted-foreground'>
-                        {vacantFlexible.length} of {flexibleSeats.length} Vacant
-                      </span>
-                    </div>
-                    <div className='grid grid-cols-2 sm:grid-cols-5 md:grid-cols-10 gap-2'>
-                      {flexibleSeats.map((seat) => {
-                        const isSelected = selectedSeatNumber === seat.seatNumber
-                        const isOccupied = seat.status === 'occupied'
-                        return (
-                          <button
-                            type='button'
-                            key={seat.id}
-                            disabled={isOccupied}
-                            onClick={() => handleSeatClick(seat)}
-                            className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-between text-center transition-all ${
-                              isSelected
-                                ? 'border-primary bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 scale-105 shadow-md z-10'
-                                : isOccupied
-                                  ? 'border-muted bg-muted/40 text-muted-foreground opacity-45 cursor-not-allowed'
-                                  : 'border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-600 hover:bg-emerald-500/15 cursor-pointer text-foreground'
-                            }`}
-                          >
-                            <span className='font-mono font-bold text-xs'>{seat.seatNumber}</span>
-                            <Armchair className={`h-4 w-4 my-1 ${isSelected ? 'text-primary-foreground' : isOccupied ? 'text-muted-foreground' : 'text-emerald-600'}`} />
-                            <span className='text-[9px] font-semibold block'>
-                              {isSelected ? '✓ Picked' : isOccupied ? 'Occupied' : 'Vacant'}
+                    return (
+                      <div key={hallName} className='rounded-2xl border p-4 sm:p-5 bg-card/60 shadow-xs space-y-3'>
+                        <div className='flex flex-wrap items-center justify-between gap-2 border-b pb-2.5'>
+                          <div className='flex items-center gap-2'>
+                            <div className='p-1.5 rounded-lg bg-primary/10 text-primary'>
+                              <Building2 className='h-4 w-4' />
+                            </div>
+                            <span className='font-bold text-sm sm:text-base text-foreground'>
+                              {hallName}
                             </span>
-                          </button>
-                        )
-                      })}
+                          </div>
+                          <div className='flex items-center gap-2'>
+                            <Badge variant='outline' className='text-xs font-semibold text-muted-foreground'>
+                              Total Cabins: {hallSeats.length}
+                            </Badge>
+                            <Badge
+                              variant='outline'
+                              className='text-xs font-semibold text-emerald-600 border-emerald-300 bg-emerald-500/10'
+                            >
+                              {hallVacant} Available
+                            </Badge>
+                          </div>
+                        </div>
+
+                        {/* Desks Grid for this Hall */}
+                        <div className='grid grid-cols-5 sm:grid-cols-6 md:grid-cols-10 gap-2'>
+                          {hallSeats.map((seat) => {
+                            const isSelected = selectedSeatNumber === seat.seatNumber
+                            const isOccupied = seat.status === 'occupied'
+                            const displayNum = getDeskDisplayNumber(seat.seatNumber, hallName)
+
+                            return (
+                              <button
+                                type='button'
+                                key={seat.id}
+                                disabled={isOccupied}
+                                onClick={() => handleSeatClick(seat)}
+                                className={`p-2 rounded-xl border-2 flex flex-col items-center justify-between text-center transition-all ${
+                                  isSelected
+                                    ? 'border-primary bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2 scale-105 shadow-md z-10'
+                                    : isOccupied
+                                      ? 'border-muted bg-muted/40 text-muted-foreground opacity-45 cursor-not-allowed'
+                                      : 'border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-600 hover:bg-emerald-500/15 cursor-pointer text-foreground'
+                                }`}
+                              >
+                                <span className='font-mono font-bold text-xs sm:text-sm'>{displayNum}</span>
+                                <Armchair
+                                  className={`h-4 w-4 my-1 ${
+                                    isSelected
+                                      ? 'text-primary-foreground'
+                                      : isOccupied
+                                        ? 'text-muted-foreground'
+                                        : 'text-emerald-600'
+                                  }`}
+                                />
+                                <span className='text-[8px] sm:text-[9px] font-semibold block truncate w-full'>
+                                  {isSelected ? '✓ Picked' : isOccupied ? 'Occupied' : 'Vacant'}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {halls.length === 0 && (
+                    <div className='p-6 text-center text-xs text-muted-foreground border border-dashed rounded-xl'>
+                      No study halls or desks currently available.
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* Free Personal Locker Option (100% Included) */}
                 <div className='flex items-center justify-between p-3.5 rounded-xl border bg-muted/20 mt-3'>

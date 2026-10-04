@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select'
 import { Student, ShiftType, SeatType, MembershipPlan } from '../types'
 import { PLAN_PRICING } from '../data/mock-data'
+import { getDeskFullLabel } from '../lib/seat-utils'
 import { supabaseService } from '../lib/supabase-service'
 import { useStudyLoungeStore } from '../store/study-lounge-store'
 
@@ -426,7 +427,7 @@ export function StudentFormDialog({
                     <SelectItem value='Unassigned'>Unassigned / Flex</SelectItem>
                     {availableSeats.map((seat) => (
                       <SelectItem key={seat.id} value={seat.seatNumber}>
-                        {seat.seatNumber} ({seat.section || 'Hall A'})
+                        {getDeskFullLabel(seat.seatNumber, seat.section)}
                       </SelectItem>
                     ))}
                   </SelectContent>
