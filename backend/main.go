@@ -105,14 +105,16 @@ func initServer() {
 	// Reverse proxy Telegram 2FA & email endpoints to the bot on internal port 5001
 	botProxyURL, _ := url.Parse("http://localhost:5001")
 	botProxy := httputil.NewSingleHostReverseProxy(botProxyURL)
-	mux.HandleFunc("/api/auth/", func(w http.ResponseWriter, r *http.Request) {
-		botProxy.ServeHTTP(w, r)
-	})
-	mux.HandleFunc("/api/email/", func(w http.ResponseWriter, r *http.Request) {
-		botProxy.ServeHTTP(w, r)
+
+	combinedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/auth") || strings.HasPrefix(r.URL.Path, "/api/email") {
+			botProxy.ServeHTTP(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
 	})
 
-	appHandler = corsMiddleware(mux)
+	appHandler = corsMiddleware(combinedHandler)
 }
 
 // Handler is exported for Vercel Go Serverless execution if invoked as a function
