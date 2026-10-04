@@ -20,6 +20,7 @@ function getReceiptHtml({ student, transaction, libraryName = 'Vertical Classes'
   const rawAmountNum = transaction?.amount != null ? Number(transaction.amount) : 1000;
   const amount = rawAmountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 });
   const rawDueNum = student?.amount_due || 0;
+  const dueFormatted = Number(rawDueNum).toLocaleString('en-IN', { minimumFractionDigits: 2 });
   const modeMap = {
     upi: 'UPI Transfer',
     cash: 'Cash Payment',
