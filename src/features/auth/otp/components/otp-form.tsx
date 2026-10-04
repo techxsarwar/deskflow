@@ -70,7 +70,8 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         // Set authenticated admin session
         const user = {
           accountNo: result.user?.accountNo || 'ADM-001',
-          email: result.user?.email || 'admin@deskflow.com',
+          name: result.user?.name || sessionStorage.getItem('pending_admin_name') || 'Lead Librarian & Admin',
+          email: result.user?.email || (phone ? `+91 ${phone}` : 'admin@deskflow.com'),
           role: result.user?.role || ['admin', 'librarian'],
           exp: Date.now() + 24 * 60 * 60 * 1000,
         }
@@ -79,7 +80,7 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         auth.setAccessToken('deskflow-telegram-admin-token')
         sessionStorage.removeItem('pending_auth_phone')
 
-        toast.success(`🎉 Welcome, ${result.user?.name || 'Admin'}!`, {
+        toast.success(`🎉 Welcome, ${user.name}!`, {
           description: 'Access granted to DeskFlow Library Management Operating System.',
         })
 
@@ -102,6 +103,7 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
 
         const user = {
           accountNo: 'LIB-001',
+          name: 'Lead Librarian & Admin',
           email: email || 'admin@deskflow.com',
           role: ['admin', 'librarian'],
           exp: Date.now() + 24 * 60 * 60 * 1000,
