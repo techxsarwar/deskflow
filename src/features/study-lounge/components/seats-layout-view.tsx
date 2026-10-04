@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react'
 import {
   Armchair,
-  User,
-  Sparkles,
+  Building2,
   Trash2,
   Share2,
   Clock,
   RefreshCw,
+  Plus,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -40,11 +40,20 @@ export function SeatsLayoutView() {
   const [renewStudent, setRenewStudent] = useState<Student | null>(null)
   const [renewOpen, setRenewOpen] = useState(false)
 
-  // Sections
-  const silentHall = seats.filter((s) => s.type === 'dedicated')
-  const flexiHall = seats.filter((s) => s.type === 'flexible')
-  const cabins = seats.filter((s) => s.type === 'cabin')
-  const zoneCount = 2 + (cabins.length > 0 ? 1 : 0)
+  // Dynamically group all Private Desks by Hall Name
+  const halls = useMemo(() => {
+    const map = new Map<string, LoungeSeat[]>()
+    seats.forEach((seat) => {
+      const hallName = seat.section?.trim() || 'Hall A'
+      if (!map.has(hallName)) {
+        map.set(hallName, [])
+      }
+      map.get(hallName)!.push(seat)
+    })
+    return Array.from(map.entries()).sort(([a], [b]) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    )
+  }, [seats])
 
   const totalSeats = seats.length
   const occupiedSeats = seats.filter((s) => s.status === 'occupied').length
@@ -102,7 +111,7 @@ export function SeatsLayoutView() {
             <span className='text-xs font-medium text-muted-foreground'>Total Capacity</span>
             <div className='mt-1 flex items-baseline justify-between'>
               <h3 className='text-2xl font-bold'>{totalSeats} Desks</h3>
-              <Badge variant='outline'>{zoneCount} Zones</Badge>
+              <Badge variant='outline'>{halls.length} Halls</Badge>
             </div>
           </CardContent>
         </Card>
@@ -131,7 +140,7 @@ export function SeatsLayoutView() {
 
         <Card>
           <CardContent className='p-4'>
-            <span className='text-xs font-medium text-muted-foreground'>Legend</span>
+            <span className='text-xs font-medium text-muted-foreground'>All Private Desks</span>
             <div className='mt-2 flex flex-wrap items-center gap-3 text-xs'>
               <span className='flex items-center gap-1.5'>
                 <span className='h-3 w-3 rounded-full bg-emerald-500'></span> Vacant
@@ -150,9 +159,9 @@ export function SeatsLayoutView() {
       {/* Action Bar */}
       <div className='flex flex-col sm:flex-row sm:items-center justify-between gap-3'>
         <div>
-          <h3 className='font-bold text-base tracking-tight'>Library Seating Chart</h3>
+          <h3 className='font-bold text-base tracking-tight'>Library Seating Chart (By Halls)</h3>
           <p className='text-xs text-muted-foreground'>
-            Click any desk to allocate to an unassigned student or manage floor details.
+            All spaces are dedicated Private Desks organized by Hall. Click any desk to allocate or manage.
           </p>
         </div>
         <div className='flex flex-col min-[480px]:flex-row flex-wrap items-stretch sm:items-center gap-2'>
@@ -188,156 +197,92 @@ export function SeatsLayoutView() {
         </div>
       </div>
 
-      {/* Main Floor Plan Grid */}
+      {/* Main Floor Plan Grid Grouped by Hall */}
       <div className='space-y-6'>
-        {/* Zone 1: Silent Reading Hall (Dedicated Desks) */}
-        <Card>
-          <CardHeader className='pb-3'>
-            <CardTitle className='text-base flex items-center gap-2'>
-              <Armchair className='h-4 w-4 text-primary' />
-              Main Silent Reading Hall (Dedicated Desks)
-            </CardTitle>
-            <CardDescription>
-              Dedicated ergonomic study booths with partition walls & individual power sockets.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className='grid grid-cols-3 sm:grid-cols-6 md:grid-cols-9 gap-2 sm:gap-3'>
-              {silentHall.map((seat) => {
-                const isOccupied = seat.status === 'occupied'
-                const occupant = getSeatOccupant(seat)
-                const isOverdue = occupant ? getMembershipLifecycle(occupant).isEligibleForRelease : false
-                return (
-                  <div
-                    key={seat.id}
-                    onClick={() => handleSeatClick(seat)}
-                    className={`relative p-2 sm:p-3 rounded-xl border-2 flex flex-col items-center justify-between cursor-pointer transition-all hover:scale-105 select-none ${
-                      isOccupied
-                        ? isOverdue
-                          ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                          : 'border-primary/40 bg-primary/10 text-primary'
-                        : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:border-emerald-500'
-                    }`}
-                  >
-                    <span className='font-mono font-bold text-xs sm:text-sm'>{seat.seatNumber}</span>
-                    <Armchair
-                      className={`h-5 w-5 sm:h-6 sm:w-6 my-1 sm:my-1.5 ${
-                        isOccupied ? (isOverdue ? 'text-rose-600' : 'text-primary') : 'text-emerald-600'
-                      }`}
-                    />
-                    <span className='text-[9px] sm:text-[10px] font-semibold truncate w-full text-center'>
-                      {isOccupied ? seat.currentStudentName?.split(' ')[0] : 'Vacant'}
-                    </span>
-                    {isOverdue && (
-                      <span
-                        className='absolute -top-1 -right-1 h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-rose-600 ring-2 ring-background'
-                        title='Membership expired beyond grace period'
-                      />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
+        {halls.map(([hallName, hallDesks]) => {
+          const hallOccupied = hallDesks.filter((s) => s.status === 'occupied').length
+          const hallAvailable = hallDesks.length - hallOccupied
 
-        {/* Zone 2: Flexi Open Zone */}
-        <Card>
-          <CardHeader className='pb-3'>
-            <CardTitle className='text-base flex items-center gap-2'>
-              <Sparkles className='h-4 w-4 text-amber-500' />
-              Flexi Open Zone (Flexible Desks)
-            </CardTitle>
-            <CardDescription>Open communal desks for daily & flexible slot students.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className='grid grid-cols-2 sm:grid-cols-5 md:grid-cols-10 gap-3'>
-              {flexiHall.map((seat) => {
-                const isOccupied = seat.status === 'occupied'
-                const occupant = getSeatOccupant(seat)
-                const isOverdue = occupant ? getMembershipLifecycle(occupant).isEligibleForRelease : false
-                return (
-                  <div
-                    key={seat.id}
-                    onClick={() => handleSeatClick(seat)}
-                    className={`relative p-3 rounded-xl border-2 flex flex-col items-center justify-between cursor-pointer transition-all hover:scale-105 select-none ${
-                      isOccupied
-                        ? isOverdue
-                          ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                          : 'border-primary/40 bg-primary/10 text-primary'
-                        : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                    }`}
-                  >
-                    <span className='font-mono font-bold text-sm'>{seat.seatNumber}</span>
-                    <Armchair
-                      className={`h-5 w-5 my-1.5 ${
-                        isOccupied ? (isOverdue ? 'text-rose-600' : 'text-primary') : 'text-emerald-600'
-                      }`}
-                    />
-                    <span className='text-[10px] font-semibold truncate w-full text-center'>
-                      {isOccupied ? seat.currentStudentName?.split(' ')[0] : 'Vacant'}
-                    </span>
-                    {isOverdue && (
-                      <span
-                        className='absolute -top-1 -right-1 h-3 w-3 rounded-full bg-rose-600 ring-2 ring-background'
-                        title='Membership expired beyond grace period'
-                      />
-                    )}
+          return (
+            <Card key={hallName} className='border shadow-xs'>
+              <CardHeader className='pb-3'>
+                <div className='flex flex-col sm:flex-row sm:items-center justify-between gap-2'>
+                  <div>
+                    <CardTitle className='text-base flex items-center gap-2'>
+                      <Building2 className='h-4 w-4 text-primary' />
+                      {hallName}
+                    </CardTitle>
+                    <CardDescription className='mt-0.5'>
+                      {hallDesks.length} Private Desks • {hallAvailable} Vacant • {hallOccupied} Occupied
+                    </CardDescription>
                   </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-        {/* Zone 3: Private Executive Cabins (Dynamically rendered when added) */}
-        {cabins.length > 0 && (
-          <Card className='border-purple-500/20 bg-purple-500/5'>
-            <CardHeader className='pb-3'>
-              <CardTitle className='text-base flex items-center gap-2 text-purple-700 dark:text-purple-300'>
-                <User className='h-4 w-4' />
-                Private Executive Cabins ({cabins.length} Active)
-              </CardTitle>
-              <CardDescription>Private executive workstations added to the floor plan.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className='grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3'>
-                {cabins.map((seat) => {
-                  const isOccupied = seat.status === 'occupied'
-                  const occupant = getSeatOccupant(seat)
-                  const isOverdue = occupant ? getMembershipLifecycle(occupant).isEligibleForRelease : false
-                  return (
-                    <div
-                      key={seat.id}
-                      onClick={() => handleSeatClick(seat)}
-                      className={`relative p-3 rounded-xl border-2 flex flex-col items-center justify-between cursor-pointer transition-all hover:scale-105 select-none ${
-                        isOccupied
-                          ? isOverdue
-                            ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                            : 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300'
-                          : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                      }`}
-                    >
-                      <span className='font-mono font-bold text-sm'>{seat.seatNumber}</span>
-                      <Armchair
-                        className={`h-5 w-5 my-1.5 ${
-                          isOccupied ? (isOverdue ? 'text-rose-600' : 'text-purple-600') : 'text-emerald-600'
+                  <div className='flex items-center gap-2'>
+                    <Badge variant='outline' className='text-xs font-mono font-bold'>
+                      {hallOccupied}/{hallDesks.length} Occupied
+                    </Badge>
+                    <AddSeatDialog
+                      defaultHall={hallName}
+                      triggerButton={
+                        <Button variant='outline' size='sm' className='h-7 text-xs gap-1 font-semibold'>
+                          <Plus className='h-3 w-3' />
+                          Add Desks to {hallName}
+                        </Button>
+                      }
+                    />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className='grid grid-cols-3 sm:grid-cols-6 md:grid-cols-10 gap-2 sm:gap-3'>
+                  {hallDesks.map((seat) => {
+                    const isOccupied = seat.status === 'occupied'
+                    const occupant = getSeatOccupant(seat)
+                    const isOverdue = occupant ? getMembershipLifecycle(occupant).isEligibleForRelease : false
+                    return (
+                      <div
+                        key={seat.id}
+                        onClick={() => handleSeatClick(seat)}
+                        className={`relative p-2.5 sm:p-3 rounded-xl border-2 flex flex-col items-center justify-between cursor-pointer transition-all hover:scale-105 select-none ${
+                          isOccupied
+                            ? isOverdue
+                              ? 'border-rose-500/50 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                              : 'border-primary/40 bg-primary/10 text-primary'
+                            : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:border-emerald-500'
                         }`}
-                      />
-                      <span className='text-[10px] font-semibold truncate w-full text-center'>
-                        {isOccupied ? seat.currentStudentName?.split(' ')[0] : 'Vacant'}
-                      </span>
-                      {isOverdue && (
-                        <span
-                          className='absolute -top-1 -right-1 h-3 w-3 rounded-full bg-rose-600 ring-2 ring-background'
-                          title='Membership expired beyond grace period'
+                      >
+                        <span className='font-mono font-bold text-xs sm:text-sm'>{seat.seatNumber}</span>
+                        <Armchair
+                          className={`h-5 w-5 sm:h-6 sm:w-6 my-1 sm:my-1.5 ${
+                            isOccupied ? (isOverdue ? 'text-rose-600' : 'text-primary') : 'text-emerald-600'
+                          }`}
                         />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
+                        <span className='text-[9px] sm:text-[10px] font-semibold truncate w-full text-center'>
+                          {isOccupied ? seat.currentStudentName?.split(' ')[0] : 'Vacant'}
+                        </span>
+                        {isOverdue && (
+                          <span
+                            className='absolute -top-1 -right-1 h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full bg-rose-600 ring-2 ring-background'
+                            title='Membership expired beyond grace period'
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
+
+        {halls.length === 0 && (
+          <div className='p-8 rounded-2xl border border-dashed text-center space-y-3 bg-muted/20'>
+            <Building2 className='h-10 w-10 text-muted-foreground mx-auto' />
+            <h4 className='font-bold text-base'>No Halls or Desks configured yet</h4>
+            <p className='text-xs text-muted-foreground max-w-sm mx-auto'>
+              Create your first Hall (e.g., Hall A) and add private desks to build your library seating arrangement.
+            </p>
+            <AddSeatDialog />
+          </div>
         )}
       </div>
 
@@ -347,7 +292,7 @@ export function SeatsLayoutView() {
           <DialogHeader>
             <DialogTitle className='flex items-center gap-2'>
               <Armchair className='h-5 w-5 text-primary' />
-              Desk {selectedSeat?.seatNumber} Details
+              Private Desk {selectedSeat?.seatNumber} Details
             </DialogTitle>
           </DialogHeader>
 
@@ -355,12 +300,12 @@ export function SeatsLayoutView() {
             <div className='space-y-4'>
               <div className='rounded-lg border p-4 bg-muted/30 text-sm space-y-2'>
                 <div className='flex justify-between'>
-                  <span className='text-muted-foreground'>Zone / Section:</span>
-                  <span className='font-medium'>{selectedSeat.section}</span>
+                  <span className='text-muted-foreground'>Hall Name:</span>
+                  <span className='font-bold text-foreground'>{selectedSeat.section || 'Hall A'}</span>
                 </div>
                 <div className='flex justify-between'>
-                  <span className='text-muted-foreground'>Desk Type:</span>
-                  <span className='font-medium capitalize'>{selectedSeat.type} Desk</span>
+                  <span className='text-muted-foreground'>Desk Category:</span>
+                  <span className='font-medium text-primary'>Private Desk</span>
                 </div>
                 <div className='flex justify-between'>
                   <span className='text-muted-foreground'>Current Status:</span>
@@ -474,7 +419,7 @@ export function SeatsLayoutView() {
                         if (selectedSeat.currentStudentId) {
                           assignSeat(selectedSeat.currentStudentId, 'Unassigned')
                           setAssignStudentModalOpen(false)
-                          toast.success(`${selectedSeat.seatNumber} is now vacant.`)
+                          toast.success(`Desk ${selectedSeat.seatNumber} is now vacant.`)
                         }
                       }}
                     >
@@ -488,7 +433,7 @@ export function SeatsLayoutView() {
                 <div className='space-y-3 pt-2'>
                   <div className='flex items-center justify-between'>
                     <h4 className='text-xs font-semibold uppercase tracking-wider text-muted-foreground'>
-                      Assign {selectedSeat.type === 'cabin' ? 'Private Cabin' : 'Desk'} to an Unassigned Student:
+                      Assign Private Desk to an Unassigned Student:
                     </h4>
                     <Badge variant='outline' className='text-[10px]'>
                       {unassignedStudents.length} Waiting
@@ -543,7 +488,7 @@ export function SeatsLayoutView() {
                               className='h-7 text-xs shrink-0'
                               onClick={() => {
                                 handleAssignToStudent(s.id)
-                                toast.success(`Assigned ${selectedSeat.seatNumber} to ${s.fullName}!`)
+                                toast.success(`Assigned Private Desk ${selectedSeat.seatNumber} to ${s.fullName}!`)
                               }}
                             >
                               Assign Desk
@@ -566,21 +511,19 @@ export function SeatsLayoutView() {
                   onClick={() => {
                     if (
                       confirm(
-                        `Are you sure you want to remove ${
-                          selectedSeat.type === 'cabin' ? 'Private Cabin' : 'Desk'
-                        } ${selectedSeat.seatNumber} from the floor plan?`
+                        `Are you sure you want to remove Private Desk ${selectedSeat.seatNumber} from ${selectedSeat.section || 'the floor plan'}?`
                       )
                     ) {
                       deleteSeat(selectedSeat.seatNumber)
                       setAssignStudentModalOpen(false)
                       toast.success(
-                        `Removed ${selectedSeat.seatNumber} from floor plan.`
+                        `Removed Private Desk ${selectedSeat.seatNumber} from floor plan.`
                       )
                     }
                   }}
                 >
                   <Trash2 className='h-3.5 w-3.5' />
-                  Remove {selectedSeat.type === 'cabin' ? 'Cabin' : 'Desk'}
+                  Remove Desk
                 </Button>
 
                 <Button

@@ -59,6 +59,7 @@ interface StudyLoungeState {
   ) => FeeTransaction | null
   assignSeat: (studentId: string, seatNumber: string) => void
   addSeat: (data: { seatNumber: string; type: LoungeSeat['type']; section: string }) => LoungeSeat
+  addSeatsBulk: (seatsData: { seatNumber: string; type: LoungeSeat['type']; section: string }[]) => LoungeSeat[]
   deleteSeat: (seatNumber: string) => void
   resetToDefaults: () => void
   syncWithSupabase: (silent?: boolean) => Promise<boolean>
@@ -744,6 +745,33 @@ export const useStudyLoungeStore = create<StudyLoungeState>()(
         }
 
         return newSeat
+      },
+
+      addSeatsBulk: (seatsData) => {
+        const newSeats: LoungeSeat[] = seatsData.map((data) => ({
+          id: `SEAT-${data.seatNumber}`,
+          seatNumber: data.seatNumber,
+          type: data.type || 'dedicated',
+          section: data.section,
+          status: 'available',
+        }))
+
+        const newSeatNumbers = new Set(newSeats.map((s) => s.seatNumber))
+
+        set((state) => ({
+          seats: [
+            ...state.seats.filter((s) => !newSeatNumbers.has(s.seatNumber)),
+            ...newSeats,
+          ],
+        }))
+
+        if (supabaseService.isEnabled()) {
+          supabaseService.insertSeatsBulk(newSeats).catch((e) => {
+            console.error('Background Supabase insertSeatsBulk error:', e)
+          })
+        }
+
+        return newSeats
       },
 
       deleteSeat: (seatNumber) => {

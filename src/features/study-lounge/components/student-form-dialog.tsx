@@ -385,7 +385,7 @@ export function StudentFormDialog({
             <h4 className='text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3'>
               Seat & Slot Allocation
             </h4>
-            <div className='grid grid-cols-1 sm:grid-cols-3 gap-3'>
+            <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
               <div className='space-y-1.5'>
                 <Label>Shift / Slot</Label>
                 <Select
@@ -408,44 +408,25 @@ export function StudentFormDialog({
               </div>
 
               <div className='space-y-1.5'>
-                <Label>Desk / Space Type</Label>
-                <Select
-                  value={formData.seatType}
-                  onValueChange={(val) =>
-                    setFormData((p) => ({ ...p, seatType: val as SeatType }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value='dedicated'>Dedicated Silent Desk</SelectItem>
-                    <SelectItem value='flexible'>Flexible Open Seat</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className='space-y-1.5'>
-                <Label>Assign Desk No.</Label>
+                <Label>Assign Private Desk</Label>
                 <Select
                   value={formData.seatNumber}
                   onValueChange={(val) => {
-                    const matchedSeat = seats.find((s) => s.seatNumber === val)
                     setFormData((p) => ({
                       ...p,
                       seatNumber: val,
-                      seatType: matchedSeat ? matchedSeat.type : p.seatType,
+                      seatType: 'dedicated',
                     }))
                   }}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder='Select Desk' />
+                    <SelectValue placeholder='Select Private Desk' />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value='Unassigned'>Unassigned / Flex</SelectItem>
                     {availableSeats.map((seat) => (
                       <SelectItem key={seat.id} value={seat.seatNumber}>
-                        {seat.seatNumber} ({seat.type === 'dedicated' ? 'Dedicated' : 'Flexible'} - {seat.section})
+                        {seat.seatNumber} ({seat.section || 'Hall A'})
                       </SelectItem>
                     ))}
                   </SelectContent>

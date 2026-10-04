@@ -320,16 +320,10 @@ export function buildSeatingArrangementBroadcastMessage({
     return true
   })
 
-  // Group by sections / zones
+  // Group by Hall Names
   const sectionsMap = new Map<string, LoungeSeat[]>()
   filteredSeats.forEach((seat) => {
-    const sec =
-      seat.section ||
-      (seat.type === 'dedicated'
-        ? 'Silent Reading Hall (Dedicated Desks)'
-        : seat.type === 'cabin'
-          ? 'Private Executive Cabins'
-          : 'Flexi Open Zone')
+    const sec = seat.section?.trim() || 'Main Hall'
     if (!sectionsMap.has(sec)) {
       sectionsMap.set(sec, [])
     }
@@ -371,7 +365,7 @@ export function buildSeatingArrangementBroadcastMessage({
     })
 
     sectionsContent.push(
-      `🏛️ *${sectionName.toUpperCase()}* (${sectionOccupied}/${sectionTotal} Desks Occupied)\n` +
+      `🏛️ *${sectionName.toUpperCase()}* (${sectionOccupied}/${sectionTotal} Private Desks Occupied)\n` +
         seatLines.join('\n')
     )
   })
@@ -381,7 +375,7 @@ export function buildSeatingArrangementBroadcastMessage({
       ? '📋 *STUDENT ALLOTMENT ROSTER (OCCUPIED DESKS ONLY)*'
       : filterType === 'vacant'
         ? '🟢 *AVAILABLE VACANT DESKS LIST (READY TO BOOK)*'
-        : '🪑 *OFFICIAL SEATING ALLOTMENT LIST*'
+        : '🪑 *OFFICIAL PRIVATE DESKS ALLOTMENT LIST*'
 
   const lines = [
     `📢 *VERTICAL CLASSES LIBRARY & STUDY LOUNGE*`,
@@ -389,9 +383,9 @@ export function buildSeatingArrangementBroadcastMessage({
     `🗓️ *Date:* ${formattedDate} • ⏰ *Updated:* ${formattedTime} IST`,
     `─────────────────────────`,
     `📊 *FLOOR OVERVIEW:*`,
-    `• *Total Desks:* ${totalDesks} Study Spaces`,
+    `• *Total Desks:* ${totalDesks} Private Desks`,
     `• *Occupied / Allotted:* ${occupiedDesks} Students (${occupancyPct}% full)`,
-    `• *Available Vacant:* ${vacantDesks} Desks Available`,
+    `• *Available Vacant:* ${vacantDesks} Private Desks Available`,
     `─────────────────────────`,
     ``,
     sectionsContent.length > 0

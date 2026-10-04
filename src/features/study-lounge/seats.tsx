@@ -18,7 +18,7 @@ export function StudyLoungeSeats() {
         <div>
           <h2 className='text-2xl font-bold tracking-tight'>Desk Layout & Occupancy</h2>
           <p className='text-muted-foreground'>
-            Interactive floor plan and real-time seat availability across all zones.
+            Interactive floor plan and real-time private desk availability organized by halls.
           </p>
         </div>
 

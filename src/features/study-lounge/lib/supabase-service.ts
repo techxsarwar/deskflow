@@ -367,13 +367,16 @@ export const supabaseService = {
     if (!client) return false
 
     try {
-      const { error } = await client.from('seats').insert({
-        id: seat.id,
-        seat_number: seat.seatNumber,
-        type: seat.type,
-        section: seat.section,
-        status: seat.status || 'available',
-      })
+      const { error } = await client.from('seats').upsert(
+        {
+          id: seat.id,
+          seat_number: seat.seatNumber,
+          type: seat.type || 'dedicated',
+          section: seat.section,
+          status: seat.status || 'available',
+        },
+        { onConflict: 'seat_number' }
+      )
 
       if (error) {
         console.error('Error inserting seat into Supabase:', error.message)
@@ -382,6 +385,32 @@ export const supabaseService = {
       return true
     } catch (err) {
       console.error('Supabase insertSeat exception:', err)
+      return false
+    }
+  },
+
+  insertSeatsBulk: async (seatsList: LoungeSeat[]): Promise<boolean> => {
+    const client = getSupabaseClient()
+    if (!client || seatsList.length === 0) return false
+
+    try {
+      const rows = seatsList.map((seat) => ({
+        id: seat.id,
+        seat_number: seat.seatNumber,
+        type: seat.type || 'dedicated',
+        section: seat.section,
+        status: seat.status || 'available',
+      }))
+
+      const { error } = await client.from('seats').upsert(rows, { onConflict: 'seat_number' })
+
+      if (error) {
+        console.error('Error bulk inserting seats into Supabase:', error.message)
+        return false
+      }
+      return true
+    } catch (err) {
+      console.error('Supabase insertSeatsBulk exception:', err)
       return false
     }
   },

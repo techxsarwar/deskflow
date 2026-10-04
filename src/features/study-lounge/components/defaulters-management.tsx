@@ -365,8 +365,8 @@ export function DefaultersManagement() {
                             <div className='font-medium text-foreground flex items-center gap-1 text-xs'>
                               <Armchair className='h-3.5 w-3.5 text-primary' />
                               <span>{student.seatNumber || 'Unassigned'}</span>
-                              <span className='text-[10px] text-muted-foreground capitalize'>
-                                ({student.seatType})
+                              <span className='text-[10px] text-muted-foreground'>
+                                (Private Desk)
                               </span>
                             </div>
                             <span className='text-xs text-muted-foreground block mt-0.5'>

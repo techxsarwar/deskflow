@@ -358,7 +358,7 @@ export function FeeReceiptDialog({
                       <span className='text-muted-foreground text-[11px] block'>Allotted Desk / Seat</span>
                       <span className='font-semibold text-foreground flex items-center gap-1'>
                         <Armchair className='h-3 w-3 text-primary' />
-                        {seatNumber} ({student?.seatType === 'dedicated' ? 'Dedicated' : 'Flexi'})
+                        {seatNumber} (Private Desk)
                       </span>
                     </div>
                     <div>

@@ -47,7 +47,7 @@ export const INITIAL_STUDENTS: Student[] = []
 
 export const INITIAL_TRANSACTIONS: FeeTransaction[] = []
 
-// 30 Clean Lounge Desks / Cabins ready for real student occupancy (20 Dedicated, 10 Flexible)
+// 30 Clean Private Desks ready for real student occupancy organized by Hall Name
 export const INITIAL_SEATS: LoungeSeat[] = [
   ...Array.from({ length: 20 }, (_, i) => {
     const seatNumber = `D-${String(i + 1).padStart(2, '0')}`
@@ -55,17 +55,17 @@ export const INITIAL_SEATS: LoungeSeat[] = [
       id: `SEAT-${seatNumber}`,
       seatNumber,
       type: 'dedicated' as SeatType,
-      section: 'Main Silent Hall A',
+      section: 'Hall A',
       status: 'available' as const,
     }
   }),
   ...Array.from({ length: 10 }, (_, i) => {
-    const seatNumber = `F-${String(i + 1).padStart(2, '0')}`
+    const seatNumber = `D-${String(21 + i).padStart(2, '0')}`
     return {
       id: `SEAT-${seatNumber}`,
       seatNumber,
-      type: 'flexible' as SeatType,
-      section: 'Flexi Open Zone B',
+      type: 'dedicated' as SeatType,
+      section: 'Hall B',
       status: 'available' as const,
     }
   }),
