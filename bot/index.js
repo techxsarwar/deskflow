@@ -358,10 +358,10 @@ Please send /checkin or /checkout, or scan the entrance QR code to begin.
 📍 <b>Your Distance:</b> <b>${distanceMeters.toLocaleString('en-IN')} meters away</b>
 🎯 <b>Allowed Geofence:</b> Within <b>${geofence.radius_meters} meters</b> of ${geofence.name}
 
-⚠️ <b>Security Policy:</b>
-Remote attendance from home or outside the library is strictly blocked. You must be physically present inside the study hall to mark attendance.
+⚠️ <b>Notice:</b>
+You are outside the library premises. Remote attendance is strictly prohibited, and the library is not responsible for your presence or whereabouts outside the study lounge.
 
-👉 <i>Please enter the library and try again when you are inside.</i>
+👉 <i>Please enter the library and try again when you are inside at your desk.</i>
 `, {
         parse_mode: 'HTML',
         reply_markup: { remove_keyboard: true },
@@ -370,12 +370,41 @@ Remote attendance from home or outside the library is strictly blocked. You must
       // Alert Librarian / Admin of remote check-in attempt
       if (ADMIN_CHAT_ID) {
         try {
+          const studentPhone = student.phone || 'N/A';
+          const parentPhone = student.emergency_contact || 'N/A';
+
+          const adminAlertText = `
+🚨 <b>[Remote Attendance Blocked]</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+🪑 <b>Desk:</b> <b>${student.seat_number || 'Unassigned'}</b>
+❌ <b>Attempted:</b> <b>${action.toUpperCase()}</b> from <b>${distanceMeters.toLocaleString('en-IN')}m away</b> (Outside Library)!
+🕒 <b>Time:</b> ${nowTime} (IST)
+📍 <b>GPS:</b> <code>${latitude.toFixed(6)}, ${longitude.toFixed(6)}</code>
+
+📞 <b>Call Student or Parent:</b>
+• 📱 <b>Student Phone:</b> <code>+91 ${studentPhone}</code> (<a href="tel:+91${studentPhone.replace(/\D/g, '')}">Call Student</a>)
+• 👨‍👩‍👦 <b>Parent Phone:</b> <code>+91 ${parentPhone}</code> ${parentPhone !== 'N/A' ? `(<a href="tel:+91${parentPhone.replace(/\D/g, '')}">Call Parent</a>)` : ''}
+
+⚠️ <b>LIABILITY NOTICE:</b>
+<b>We are NOT responsible for him/her right now as they are outside library premises!</b>
+`;
+
+          const alertKb = new InlineKeyboard()
+            .text('👤 View Student Details', `student_view_${student.id}`)
+            .row();
+
           await bot.api.sendMessage(
             ADMIN_CHAT_ID,
-            `🚨 <b>[Remote Attendance Blocked]</b>\n👤 <b>${student.full_name}</b> (Desk: <b>${student.seat_number}</b>)\n❌ Attempted <b>${action.toUpperCase()}</b> from <b>${distanceMeters.toLocaleString('en-IN')}m away</b> (Outside Library)!\n🕒 Time: ${nowTime} (IST)\n📍 GPS: <code>${latitude.toFixed(6)}, ${longitude.toFixed(6)}</code>`,
-            { parse_mode: 'HTML' }
+            adminAlertText,
+            {
+              parse_mode: 'HTML',
+              reply_markup: alertKb,
+            }
           );
-        } catch (e) {}
+        } catch (e) {
+          console.error('Failed to dispatch remote attendance alert to admin:', e);
+        }
       }
       return;
     }
