@@ -77,13 +77,24 @@ export function UserAuthForm({ className, redirectTo: _redirectTo, ...props }: U
       cleanPhone = cleanPhone.substring(2)
     }
 
+    const botApiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5001' : 'https://deskflow-fyp9.onrender.com')
+
     try {
-      const apiUrl = 'http://localhost:5001/api/auth/send-token'
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanPhone }),
-      })
+      let res: Response
+      try {
+        res = await fetch(`${botApiBase}/api/auth/send-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: cleanPhone }),
+        })
+      } catch (networkErr) {
+        // Fallback to localhost if deployed API is unreachable
+        res = await fetch('http://localhost:5001/api/auth/send-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: cleanPhone }),
+        })
+      }
 
       const resData = await res.json()
 

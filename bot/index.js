@@ -2921,6 +2921,62 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Keep-alive ping
+app.get('/ping', (req, res) => {
+  res.send('OK');
+});
+
+// Root info
+app.get('/', (req, res) => {
+  res.json({
+    service: 'Vertical Classes Library — Unified DeskFlow Master API & Telegram Bot',
+    status: 'online',
+    version: '2.0.0',
+    bot: '@controllibrarybot',
+  });
+});
+
+// Dashboard stats fallback from Supabase
+app.get('/api/dashboard', async (req, res) => {
+  try {
+    const seats = await db.getAllSeats();
+    const students = await db.searchStudents('');
+    const occupied = seats.filter((s) => s.status === 'occupied').length;
+    const active = students.filter((s) => s.status === 'active').length;
+    const totalDues = students.reduce((acc, s) => acc + (s.amount_due || 0), 0);
+    res.json({
+      totalSeats: seats.length || 30,
+      occupiedSeats: occupied,
+      availableSeats: Math.max(0, (seats.length || 30) - occupied),
+      activeStudents: active,
+      totalDues,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Students list fallback
+app.get('/api/students', async (req, res) => {
+  try {
+    const query = req.query.search || '';
+    const students = await db.searchStudents(query);
+    res.json(students);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Seats list fallback
+app.get('/api/seats', async (req, res) => {
+  try {
+    const seats = await db.getAllSeats();
+    res.json(seats);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ==============================================================================
 // 10. Start Services (Auto-reconnecting & Drop Stale Updates)
 // ==============================================================================

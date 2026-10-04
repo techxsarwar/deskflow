@@ -47,13 +47,25 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
 
   const tokenValue = form.watch('token')
 
+  const botApiBase =
+    import.meta.env.VITE_API_URL ||
+    (import.meta.env.DEV ? 'http://localhost:5001' : 'https://deskflow-fyp9.onrender.com')
+
+  async function fetchWithFallback(endpoint: string, options: RequestInit) {
+    try {
+      return await fetch(`${botApiBase}${endpoint}`, options)
+    } catch {
+      return await fetch(`http://localhost:5001${endpoint}`, options)
+    }
+  }
+
   async function onSubmit(data: z.infer<typeof formSchema>) {
     setIsLoading(true)
 
     try {
       if (phone) {
         // 1. Primary: Verify 4-character token for Admin Phone
-        const res = await fetch('http://localhost:5001/api/auth/verify-token', {
+        const res = await fetchWithFallback('/api/auth/verify-token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -87,7 +99,7 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         navigate({ to: '/' })
       } else {
         // 2. Fallback: Legacy Email 2FA
-        const res = await fetch('http://localhost:5001/api/auth/verify-2fa', {
+        const res = await fetchWithFallback('/api/auth/verify-2fa', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -129,7 +141,7 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
     setIsResending(true)
     try {
       if (phone) {
-        const res = await fetch('http://localhost:5001/api/auth/send-token', {
+        const res = await fetchWithFallback('/api/auth/send-token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone }),
@@ -138,7 +150,7 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         if (!res.ok) throw new Error(data.error)
         toast.success('Fresh 4-character token sent to Telegram!')
       } else if (email) {
-        await fetch('http://localhost:5001/api/auth/send-2fa', {
+        await fetchWithFallback('/api/auth/send-2fa', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email }),
