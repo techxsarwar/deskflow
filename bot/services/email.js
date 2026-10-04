@@ -20,8 +20,18 @@ function getReceiptHtml({ student, transaction, libraryName = 'Vertical Classes'
   const rawAmountNum = transaction?.amount != null ? Number(transaction.amount) : 1000;
   const amount = rawAmountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 });
   const rawDueNum = student?.amount_due || 0;
-  const dueFormatted = Number(rawDueNum).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-  const mode = (transaction?.payment_mode || 'UPI').toUpperCase();
+  const modeMap = {
+    upi: 'UPI Transfer',
+    cash: 'Cash Payment',
+    bank_transfer: 'Bank Transfer (NEFT/IMPS)',
+    cheque: 'Cheque Payment',
+    card: 'Card / POS Payment',
+  };
+  let modeKey = (transaction?.payment_mode || 'upi').toLowerCase();
+  if (modeKey === 'bank_transfer' && transaction?.remarks && transaction.remarks.includes('[Cheque]')) {
+    modeKey = 'cheque';
+  }
+  const mode = modeMap[modeKey] || modeKey.toUpperCase();
 
   const seatNo = student?.seat_number && student.seat_number !== 'Unassigned' ? student.seat_number : 'Desk Assigned';
   const shift = (student?.shift || 'fullday').toUpperCase() === 'FULLDAY' ? 'Full Day Access' : `${(student?.shift || 'General').toUpperCase()} Shift`;
@@ -56,9 +66,10 @@ function getReceiptHtml({ student, transaction, libraryName = 'Vertical Classes'
               </div>
             </td>
             <td align="right" valign="top">
-              <span style="display:inline-block;padding:5px 12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;font-size:12px;font-weight:700;color:#059669;letter-spacing:0.2px;">
-                &#10003; Paid in Full
-              </span>
+              ${rawDueNum > 0
+                ? `<span style="display:inline-block;padding:5px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;font-size:12px;font-weight:700;color:#d97706;letter-spacing:0.2px;">Partially Paid</span>`
+                : `<span style="display:inline-block;padding:5px 12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;font-size:12px;font-weight:700;color:#059669;letter-spacing:0.2px;">&#10003; Paid in Full</span>`
+              }
             </td>
           </tr>
         </table>

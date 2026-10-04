@@ -215,21 +215,39 @@ async function collectFee({ studentId, amount, paymentMode = 'upi', remarks = ''
   const receiptNumber = `RCP-${Math.floor(100000 + Math.random() * 900000)}`;
   const todayStr = new Date().toISOString().split('T')[0];
 
+  let cleanMode = paymentMode.toLowerCase();
+  let cleanRemarks = remarks || `Fee payment collected via Telegram bot (${cleanMode.toUpperCase()})`;
+
   // 1. Insert Transaction
-  const { data: txn, error: txnError } = await supabase
+  let insertObj = {
+    student_id: student.id,
+    student_name: student.full_name,
+    reg_no: student.reg_no,
+    amount: parsedAmount,
+    payment_date: todayStr,
+    payment_mode: cleanMode,
+    receipt_number: receiptNumber,
+    remarks: cleanRemarks,
+  };
+
+  let { data: txn, error: txnError } = await supabase
     .from('fee_transactions')
-    .insert({
-      student_id: student.id,
-      student_name: student.full_name,
-      reg_no: student.reg_no,
-      amount: parsedAmount,
-      payment_date: todayStr,
-      payment_mode: paymentMode.toLowerCase(),
-      receipt_number: receiptNumber,
-      remarks: remarks || `Fee payment collected via Telegram bot`,
-    })
+    .insert(insertObj)
     .select()
-    .single();
+    .maybeSingle();
+
+  // If DB rejected 'cheque' due to constraint, fallback to bank_transfer with [Cheque] remark
+  if (txnError && cleanMode === 'cheque') {
+    insertObj.payment_mode = 'bank_transfer';
+    insertObj.remarks = `[Cheque] ${cleanRemarks}`;
+    const fallback = await supabase
+      .from('fee_transactions')
+      .insert(insertObj)
+      .select()
+      .maybeSingle();
+    txn = fallback.data;
+    txnError = fallback.error;
+  }
 
   if (txnError) throw txnError;
 

@@ -23,6 +23,9 @@ if (!BOT_TOKEN) {
 
 const bot = new Bot(BOT_TOKEN);
 
+// In-memory conversation state for interactive admin input (e.g. custom fee amounts)
+const adminFlowState = new Map();
+
 // ==============================================================================
 // 1. Interactive Keyboards & Menus
 // ==============================================================================
@@ -175,6 +178,60 @@ bot.command('checkout', async (ctx) => {
     parse_mode: 'HTML',
     reply_markup: contactKb,
   });
+});
+
+// Interactive Text Handler for Custom Amount Input
+bot.on('message:text', async (ctx, next) => {
+  const chatId = ctx.chat.id;
+  const state = adminFlowState.get(chatId);
+
+  if (state && state.action === 'awaiting_fee_amount') {
+    const rawText = ctx.message.text.trim();
+    // Allow formats like "1200", "1,200", "₹1200", "rs 1200"
+    const amount = parseInt(rawText.replace(/[^\d]/g, ''), 10);
+
+    if (isNaN(amount) || amount <= 0) {
+      return ctx.reply('⚠️ <b>Invalid Amount!</b>\nPlease type a valid positive number (e.g. <code>500</code>, <code>1000</code>, <code>1500</code>, <code>2500</code>):', {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('🔙 Cancel', `fee_collect_${state.studentId}`),
+      });
+    }
+
+    const studentId = state.studentId;
+    adminFlowState.delete(chatId);
+
+    try {
+      const student = await db.getStudentById(studentId);
+      if (!student) return ctx.reply('❌ Student not found in database.');
+
+      const kb = new InlineKeyboard()
+        .text('📱 UPI', `fee_pay_${student.id}_${amount}_upi`)
+        .text('💵 Cash', `fee_pay_${student.id}_${amount}_cash`)
+        .row()
+        .text('🏦 Bank Transfer', `fee_pay_${student.id}_${amount}_bank_transfer`)
+        .text('📜 Cheque', `fee_pay_${student.id}_${amount}_cheque`)
+        .row()
+        .text('✏️ Change Amount', `fee_custom_${student.id}`)
+        .text('🔙 Cancel', `student_view_${student.id}`);
+
+      return ctx.reply(`
+💳 <b>Record Payment: ₹${amount.toLocaleString('en-IN')}</b>
+━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+🪑 <b>Desk:</b> <b>${student.seat_number}</b>
+💰 <b>Current Balance Due:</b> ₹${student.amount_due}
+
+👇 <b>Select Payment Method:</b>
+`, {
+        parse_mode: 'HTML',
+        reply_markup: kb,
+      });
+    } catch (err) {
+      return ctx.reply(`❌ Error: ${err.message}`);
+    }
+  }
+
+  return next();
 });
 
 // Native Telegram Contact Handler for 1-Tap Attendance Check-In / Out
@@ -626,7 +683,7 @@ bot.callbackQuery('menu_fees', async (ctx) => {
   }
 });
 
-// Quick fee collection prompt
+// Step 1: Fee Collection Amount Prompt (Presets + Custom)
 bot.callbackQuery(/^fee_collect_(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const studentId = ctx.match[1];
@@ -634,14 +691,15 @@ bot.callbackQuery(/^fee_collect_(.+)$/, async (ctx) => {
     const student = await db.getStudentById(studentId);
     if (!student) return ctx.reply('❌ Student not found.');
 
-    const defaultAmount = student.amount_due > 0 ? student.amount_due : 1000;
+    const kb = new InlineKeyboard();
 
-    const kb = new InlineKeyboard()
-      .text(`₹${defaultAmount} via UPI`, `fee_pay_${student.id}_${defaultAmount}_upi`)
-      .text(`₹${defaultAmount} via Cash`, `fee_pay_${student.id}_${defaultAmount}_cash`)
+    if (student.amount_due > 0) {
+      kb.text(`💰 Full Due (₹${student.amount_due})`, `fee_amt_${student.id}_${student.amount_due}`).row();
+    }
+    kb.text('₹1,000 (Monthly)', `fee_amt_${student.id}_1000`)
+      .text('₹500 (Half / Partial)', `fee_amt_${student.id}_500`)
       .row()
-      .text(`₹500 (Partial)`, `fee_pay_${student.id}_500_upi`)
-      .text(`₹1000 (Monthly)`, `fee_pay_${student.id}_1000_upi`)
+      .text('✏️ Enter Custom Amount', `fee_custom_${student.id}`)
       .row()
       .text('🔙 Cancel', `student_view_${student.id}`);
 
@@ -649,10 +707,10 @@ bot.callbackQuery(/^fee_collect_(.+)$/, async (ctx) => {
 💳 <b>Record Payment for ${student.full_name}</b>
 ━━━━━━━━━━━━━━━━━━━━━
 🪑 Desk: <b>${student.seat_number}</b>
-💰 Current Due: <b>₹${student.amount_due}</b>
-📅 Current End Date: <b>${student.end_date}</b>
+💰 Current Balance Due: <b>₹${student.amount_due}</b>
+📅 Current Expiry: <b>${student.end_date}</b>
 
-<i>Select payment mode and amount to log transaction and extend membership by +30 days:</i>
+<i>Select a quick amount or tap <b>"✏️ Enter Custom Amount"</b> to type any amount:</i>
 `, {
       parse_mode: 'HTML',
       reply_markup: kb,
@@ -662,16 +720,91 @@ bot.callbackQuery(/^fee_collect_(.+)$/, async (ctx) => {
   }
 });
 
-// Execute payment collection
-bot.callbackQuery(/^fee_pay_(.+)_(.+)_(.+)$/, async (ctx) => {
+// Prompt for custom amount input
+bot.callbackQuery(/^fee_custom_(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
+  const studentId = ctx.match[1];
+  try {
+    const student = await db.getStudentById(studentId);
+    if (!student) return ctx.reply('❌ Student not found.');
+
+    adminFlowState.set(ctx.chat.id, {
+      action: 'awaiting_fee_amount',
+      studentId: student.id,
+    });
+
+    await ctx.reply(`
+✏️ <b>Enter Custom Amount for ${student.full_name}</b>
+━━━━━━━━━━━━━━━━━━━━━
+🪑 Desk: <b>${student.seat_number}</b>
+💰 Balance Due: <b>₹${student.amount_due}</b>
+
+💬 <b>Please reply with the exact amount to collect:</b>
+<i>(e.g., 700, 1200, 1500, 2500, 3000)</i>
+`, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('🔙 Back to Options', `fee_collect_${student.id}`),
+    });
+  } catch (err) {
+    await ctx.reply(`❌ Error: ${err.message}`);
+  }
+});
+
+// Step 2: Amount Selected -> Choose Payment Mode (UPI, Cash, Bank Transfer, Cheque)
+bot.callbackQuery(/^fee_amt_(.+)_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const [, studentId, amountStr] = ctx.match;
+  const amount = parseInt(amountStr, 10);
+  try {
+    const student = await db.getStudentById(studentId);
+    if (!student) return ctx.reply('❌ Student not found.');
+
+    const kb = new InlineKeyboard()
+      .text('📱 UPI', `fee_pay_${student.id}_${amount}_upi`)
+      .text('💵 Cash', `fee_pay_${student.id}_${amount}_cash`)
+      .row()
+      .text('🏦 Bank Transfer', `fee_pay_${student.id}_${amount}_bank_transfer`)
+      .text('📜 Cheque', `fee_pay_${student.id}_${amount}_cheque`)
+      .row()
+      .text('✏️ Change Amount', `fee_collect_${student.id}`)
+      .text('🔙 Cancel', `student_view_${student.id}`);
+
+    await ctx.editMessageText(`
+💳 <b>Record Payment: ₹${amount.toLocaleString('en-IN')}</b>
+━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+🪑 <b>Desk:</b> <b>${student.seat_number}</b>
+💰 <b>Current Balance Due:</b> ₹${student.amount_due}
+
+👇 <b>Select Payment Method:</b>
+`, {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
+  } catch (err) {
+    await ctx.reply(`❌ Error: ${err.message}`);
+  }
+});
+
+// Step 3: Execute Payment Collection & Generate Receipt
+bot.callbackQuery(/^fee_pay_(.+)_(.+)_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Recording payment...' });
   const [, studentId, amount, mode] = ctx.match;
   try {
+    const modeLabels = {
+      upi: '📱 UPI',
+      cash: '💵 Cash',
+      bank_transfer: '🏦 Bank Transfer',
+      cheque: '📜 Cheque',
+      card: '💳 Card',
+    };
+    const modeTitle = modeLabels[mode] || mode.toUpperCase();
+
     const { transaction, student } = await db.collectFee({
       studentId,
       amount: parseInt(amount, 10),
       paymentMode: mode,
-      remarks: `Collected via Telegram bot (${mode.toUpperCase()})`,
+      remarks: `Collected via Telegram bot (${modeTitle})`,
       extendDays: 30,
     });
 
@@ -680,7 +813,8 @@ bot.callbackQuery(/^fee_pay_(.+)_(.+)_(.+)$/, async (ctx) => {
 ━━━━━━━━━━━━━━━━━━━━━
 🧾 <b>Receipt No:</b> <code>${transaction.receipt_number}</code>
 👤 <b>Student:</b> ${student.full_name} (Desk: ${student.seat_number})
-💵 <b>Amount Paid:</b> ₹${transaction.amount.toLocaleString('en-IN')} (${mode.toUpperCase()})
+💵 <b>Amount Paid:</b> <b>₹${transaction.amount.toLocaleString('en-IN')}</b>
+💳 <b>Payment Mode:</b> <b>${modeTitle}</b>
 📅 <b>New Expiry Date:</b> <b>${student.end_date}</b> (+30 Days)
 💰 <b>Remaining Due:</b> ₹${student.amount_due.toLocaleString('en-IN')}
 `;
@@ -700,6 +834,7 @@ bot.callbackQuery(/^fee_pay_(.+)_(.+)_(.+)$/, async (ctx) => {
     await ctx.reply(`❌ Payment failed: ${err.message}`);
   }
 });
+
 
 // ==============================================================================
 // 6. Resend Email Receipts
