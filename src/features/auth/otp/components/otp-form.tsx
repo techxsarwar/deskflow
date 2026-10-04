@@ -3,7 +3,9 @@ import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from '@tanstack/react-router'
-import { showSubmittedData } from '@/lib/show-submitted-data'
+import { toast } from 'sonner'
+import { Loader2, ShieldCheck, RefreshCw } from 'lucide-react'
+import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,14 +20,13 @@ import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
-  InputOTPSeparator,
 } from '@/components/ui/input-otp'
 
 const formSchema = z.object({
-  otp: z
+  token: z
     .string()
-    .min(6, 'Please enter the 6-digit code.')
-    .max(6, 'Please enter the 6-digit code.'),
+    .min(4, 'Please enter the 4-character token.')
+    .max(6, 'Token is too long.'),
 })
 
 type OtpFormProps = React.HTMLAttributes<HTMLFormElement>
@@ -33,57 +34,150 @@ type OtpFormProps = React.HTMLAttributes<HTMLFormElement>
 export function OtpForm({ className, ...props }: OtpFormProps) {
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
+  const [isResending, setIsResending] = useState(false)
+  const { auth } = useAuthStore()
+
+  const phone = typeof window !== 'undefined' ? sessionStorage.getItem('pending_auth_phone') : null
+  const email = typeof window !== 'undefined' ? sessionStorage.getItem('pending_auth_email') : null
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { otp: '' },
+    defaultValues: { token: '' },
   })
 
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const otp = form.watch('otp')
+  const tokenValue = form.watch('token')
 
-  function onSubmit(data: z.infer<typeof formSchema>) {
+  async function onSubmit(data: z.infer<typeof formSchema>) {
     setIsLoading(true)
-    showSubmittedData(data)
 
-    setTimeout(() => {
+    try {
+      if (phone) {
+        // 1. Primary: Verify 4-character token for Admin Phone
+        const res = await fetch('http://localhost:5001/api/auth/verify-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone,
+            token: data.token.toUpperCase().trim(),
+          }),
+        })
+        const result = await res.json()
+
+        if (!res.ok) {
+          throw new Error(result.error || 'Invalid 4-digit token')
+        }
+
+        // Set authenticated admin session
+        const user = {
+          accountNo: result.user?.accountNo || 'ADM-001',
+          email: result.user?.email || 'admin@deskflow.com',
+          role: result.user?.role || ['admin', 'librarian'],
+          exp: Date.now() + 24 * 60 * 60 * 1000,
+        }
+
+        auth.setUser(user)
+        auth.setAccessToken('deskflow-telegram-admin-token')
+        sessionStorage.removeItem('pending_auth_phone')
+
+        toast.success(`🎉 Welcome, ${result.user?.name || 'Admin'}!`, {
+          description: 'Access granted to DeskFlow Library Management Operating System.',
+        })
+
+        navigate({ to: '/' })
+      } else {
+        // 2. Fallback: Legacy Email 2FA
+        const res = await fetch('http://localhost:5001/api/auth/verify-2fa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email || 'admin@deskflow.com',
+            otp: data.token,
+          }),
+        })
+        const result = await res.json()
+
+        if (!res.ok) {
+          throw new Error(result.error || 'Invalid verification code')
+        }
+
+        const user = {
+          accountNo: 'LIB-001',
+          email: email || 'admin@deskflow.com',
+          role: ['admin', 'librarian'],
+          exp: Date.now() + 24 * 60 * 60 * 1000,
+        }
+
+        auth.setUser(user)
+        auth.setAccessToken('deskflow-telegram-2fa-token')
+        sessionStorage.removeItem('pending_auth_email')
+
+        toast.success('🎉 2FA Verification Successful!')
+        navigate({ to: '/' })
+      }
+    } catch (err: any) {
+      toast.error('Verification Failed', {
+        description: err.message || 'Please check your code on Telegram and try again.',
+      })
+    } finally {
       setIsLoading(false)
-      navigate({ to: '/' })
-    }, 1000)
+    }
+  }
+
+  async function handleResend() {
+    setIsResending(true)
+    try {
+      if (phone) {
+        const res = await fetch('http://localhost:5001/api/auth/send-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        toast.success('Fresh 4-character token sent to Telegram!')
+      } else if (email) {
+        await fetch('http://localhost:5001/api/auth/send-2fa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        })
+        toast.success('Fresh verification code sent to Telegram!')
+      }
+    } catch (e: any) {
+      toast.error('Resend failed', { description: e.message })
+    } finally {
+      setIsResending(false)
+    }
   }
 
   return (
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-2', className)}
+        className={cn('grid gap-4', className)}
         {...props}
       >
         <FormField
           control={form.control}
-          name='otp'
+          name='token'
           render={({ field }) => (
-            <FormItem>
-              <FormLabel className='sr-only'>One-Time Password</FormLabel>
+            <FormItem className='flex flex-col items-center gap-2'>
+              <FormLabel className='text-xs font-semibold text-muted-foreground uppercase tracking-wider'>
+                Enter 4-Character Security Token
+              </FormLabel>
               <FormControl>
                 <InputOTP
-                  maxLength={6}
-                  {...field}
-                  containerClassName='justify-between sm:[&>[data-slot="input-otp-group"]>div]:w-12'
+                  maxLength={4}
+                  value={field.value}
+                  onChange={(val) => field.onChange(val.toUpperCase())}
+                  pattern='^[a-zA-Z0-9]+$'
+                  containerClassName='justify-center gap-2.5 sm:[&>[data-slot="input-otp-group"]>div]:w-14 sm:[&>[data-slot="input-otp-group"]>div]:h-14 sm:[&>[data-slot="input-otp-group"]>div]:text-2xl font-mono font-bold uppercase'
                 >
                   <InputOTPGroup>
                     <InputOTPSlot index={0} />
                     <InputOTPSlot index={1} />
-                  </InputOTPGroup>
-                  <InputOTPSeparator />
-                  <InputOTPGroup>
                     <InputOTPSlot index={2} />
                     <InputOTPSlot index={3} />
-                  </InputOTPGroup>
-                  <InputOTPSeparator />
-                  <InputOTPGroup>
-                    <InputOTPSlot index={4} />
-                    <InputOTPSlot index={5} />
                   </InputOTPGroup>
                 </InputOTP>
               </FormControl>
@@ -91,9 +185,42 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
             </FormItem>
           )}
         />
-        <Button className='mt-2' disabled={otp.length < 6 || isLoading}>
-          Verify
+
+        <Button
+          type='submit'
+          className='w-full mt-2 font-semibold h-11 text-sm'
+          disabled={tokenValue.length < 4 || isLoading}
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+              Verifying Security Token...
+            </>
+          ) : (
+            <>
+              <ShieldCheck className='mr-2 h-4 w-4' />
+              Verify & Enter Dashboard
+            </>
+          )}
         </Button>
+
+        <div className='flex items-center justify-center pt-1'>
+          <Button
+            type='button'
+            variant='ghost'
+            size='sm'
+            className='text-xs text-muted-foreground hover:text-foreground'
+            onClick={handleResend}
+            disabled={isResending || isLoading}
+          >
+            {isResending ? (
+              <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
+            ) : (
+              <RefreshCw className='mr-1.5 h-3.5 w-3.5' />
+            )}
+            Resend Token to Telegram
+          </Button>
+        </div>
       </form>
     </Form>
   )

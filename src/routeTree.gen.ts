@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RegisterStudentRouteImport } from './routes/register-student'
 import { Route as JoinRouteImport } from './routes/join'
+import { Route as JionRouteImport } from './routes/jion'
 import { Route as ClerkRouteRouteImport } from './routes/clerk/route'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
@@ -53,6 +54,11 @@ const RegisterStudentRoute = RegisterStudentRouteImport.update({
 const JoinRoute = JoinRouteImport.update({
   id: '/join',
   path: '/join',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JionRoute = JionRouteImport.update({
+  id: '/jion',
+  path: '/jion',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ClerkRouteRoute = ClerkRouteRouteImport.update({
@@ -231,6 +237,7 @@ const AuthenticatedErrorsErrorRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/clerk': typeof ClerkAuthenticatedRouteRouteWithChildren
+  '/jion': typeof JionRoute
   '/join': typeof JoinRoute
   '/register-student': typeof RegisterStudentRoute
   '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
@@ -264,6 +271,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/clerk': typeof ClerkAuthenticatedRouteRouteWithChildren
+  '/jion': typeof JionRoute
   '/join': typeof JoinRoute
   '/register-student': typeof RegisterStudentRoute
   '/forgot-password': typeof authForgotPasswordRoute
@@ -299,6 +307,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/clerk': typeof ClerkRouteRouteWithChildren
+  '/jion': typeof JionRoute
   '/join': typeof JoinRoute
   '/register-student': typeof RegisterStudentRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
@@ -338,6 +347,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/clerk'
+    | '/jion'
     | '/join'
     | '/register-student'
     | '/settings'
@@ -371,6 +381,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/clerk'
+    | '/jion'
     | '/join'
     | '/register-student'
     | '/forgot-password'
@@ -405,6 +416,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authenticated'
     | '/clerk'
+    | '/jion'
     | '/join'
     | '/register-student'
     | '/_authenticated/settings'
@@ -443,6 +455,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   ClerkRouteRoute: typeof ClerkRouteRouteWithChildren
+  JionRoute: typeof JionRoute
   JoinRoute: typeof JoinRoute
   RegisterStudentRoute: typeof RegisterStudentRoute
   authForgotPasswordRoute: typeof authForgotPasswordRoute
@@ -471,6 +484,13 @@ declare module '@tanstack/react-router' {
       path: '/join'
       fullPath: '/join'
       preLoaderRoute: typeof JoinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jion': {
+      id: '/jion'
+      path: '/jion'
+      fullPath: '/jion'
+      preLoaderRoute: typeof JionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/clerk': {
@@ -807,6 +827,7 @@ const ClerkRouteRouteWithChildren = ClerkRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   ClerkRouteRoute: ClerkRouteRouteWithChildren,
+  JionRoute: JionRoute,
   JoinRoute: JoinRoute,
   RegisterStudentRoute: RegisterStudentRoute,
   authForgotPasswordRoute: authForgotPasswordRoute,

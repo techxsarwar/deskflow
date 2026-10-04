@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Vertical Classes Library - Attendance QR Standees</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: #f1f5f9;
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 30px;
+    }
+    .print-bar {
+      background: #ffffff;
+      padding: 12px 24px;
+      border-radius: 999px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+    .print-btn {
+      background: #0f172a;
+      color: #ffffff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 999px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .sheet {
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .standee {
+      background: #ffffff;
+      width: 320px;
+      border-radius: 24px;
+      padding: 32px 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      border: 2px solid #e2e8f0;
+      text-align: center;
+      box-sizing: border-box;
+      position: relative;
+    }
+    .standee.in {
+      border-top: 10px solid #10b981;
+    }
+    .standee.out {
+      border-top: 10px solid #ef4444;
+    }
+    .brand {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .title {
+      font-size: 20px;
+      font-weight: 800;
+      color: #0f172a;
+      margin: 0 0 16px 0;
+    }
+    .badge {
+      display: inline-block;
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      margin-bottom: 20px;
+    }
+    .badge.in {
+      background: #ecfdf5;
+      color: #059669;
+      border: 1px solid #a7f3d0;
+    }
+    .badge.out {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+    }
+    .qr-box {
+      background: #f8fafc;
+      border-radius: 16px;
+      padding: 16px;
+      border: 1px dashed #cbd5e1;
+      display: inline-block;
+      margin-bottom: 18px;
+    }
+    .qr-box img {
+      width: 200px;
+      height: 200px;
+      display: block;
+    }
+    .instructions {
+      font-size: 12px;
+      color: #475569;
+      line-height: 1.5;
+    }
+    .instructions b {
+      color: #0f172a;
+    }
+    .timing-box {
+      margin-top: 16px;
+      padding: 10px 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      font-size: 11px;
+      color: #475569;
+      line-height: 1.5;
+      text-align: left;
+    }
+    .timing-box .timing-title {
+      font-weight: 800;
+      color: #0f172a;
+      font-size: 11px;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    @media print {
+      body { background: #ffffff; padding: 0; }
+      .print-bar { display: none; }
+      .standee { box-shadow: none; page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="print-bar">
+    <span style="font-size: 14px; font-weight: 600; color: #475569;">Ready for Reception Standees / Door Printing</span>
+    <button class="print-btn" onclick="window.print()">🖨 Print Standees</button>
+  </div>
+
+  <div class="sheet">
+    
+    <!-- ENTRANCE CHECK-IN STANDEE -->
+    <div class="standee in">
+      <div class="brand">Vertical Classes Study Lounge</div>
+      <h2 class="title">Daily Attendance</h2>
+      <div class="badge in">🟢 ENTRANCE CHECK-IN</div>
+      
+      <div class="qr-box">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://t.me/controllibrarybot?start=in" alt="Check In QR">
+      </div>
+      
+      <div class="instructions">
+        <b>1.</b> Point phone camera at QR<br>
+        <b>2.</b> Tap <b>"Share Phone Number"</b> in Telegram<br>
+        <b>3.</b> Instant Desk Check-In verified! 📚
+      </div>
+
+      <div class="timing-box">
+        <div class="timing-title">🕒 Slot Timings (IST):</div>
+        <div>• <b>Morning:</b> 06:00 AM – 12:00 PM</div>
+        <div>• <b>Afternoon:</b> 12:00 PM – 06:00 PM</div>
+        <div>• <b>Evening:</b> 06:00 PM – 11:00 PM</div>
+        <div>• <b>Full Day:</b> 06:00 AM – 11:30 PM</div>
+      </div>
+    </div>
+
+    <!-- EXIT CHECK-OUT STANDEE -->
+    <div class="standee out">
+      <div class="brand">Vertical Classes Study Lounge</div>
+      <h2 class="title">Daily Attendance</h2>
+      <div class="badge out">🔴 EXIT CHECK-OUT</div>
+      
+      <div class="qr-box">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://t.me/controllibrarybot?start=out" alt="Check Out QR">
+      </div>
+      
+      <div class="instructions">
+        <b>1.</b> Point phone camera at QR<br>
+        <b>2.</b> Tap <b>"Share Phone Number"</b> in Telegram<br>
+        <b>3.</b> Study hours calculated & logged! ⏱
+      </div>
+
+      <div class="timing-box">
+        <div class="timing-title">🕒 Slot Timings (IST):</div>
+        <div>• <b>Morning:</b> 06:00 AM – 12:00 PM</div>
+        <div>• <b>Afternoon:</b> 12:00 PM – 06:00 PM</div>
+        <div>• <b>Evening:</b> 06:00 PM – 11:00 PM</div>
+        <div>• <b>Full Day:</b> 06:00 AM – 11:30 PM</div>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
