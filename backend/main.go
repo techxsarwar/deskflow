@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -100,6 +102,16 @@ func initServer() {
 	mux.HandleFunc("GET /api/seats", h.GetSeats)
 	mux.HandleFunc("POST /api/seats/assign", h.AssignSeat)
 
+	// Reverse proxy Telegram 2FA & email endpoints to the bot on internal port 5001
+	botProxyURL, _ := url.Parse("http://localhost:5001")
+	botProxy := httputil.NewSingleHostReverseProxy(botProxyURL)
+	mux.HandleFunc("/api/auth/", func(w http.ResponseWriter, r *http.Request) {
+		botProxy.ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/api/email/", func(w http.ResponseWriter, r *http.Request) {
+		botProxy.ServeHTTP(w, r)
+	})
+
 	appHandler = corsMiddleware(mux)
 }
 
@@ -114,6 +126,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	startTelegramBotSupervisor()
 	initOnce.Do(initServer)
 
 	port := os.Getenv("PORT")
