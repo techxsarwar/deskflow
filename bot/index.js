@@ -687,7 +687,7 @@ bot.callbackQuery(/^fee_pay_(.+)_(.+)_(.+)$/, async (ctx) => {
 
     const kb = new InlineKeyboard();
     if (student.email) {
-      kb.text(`📧 Email Receipt to ${student.email}`, `email_receipt_${student.id}`).row();
+      kb.text(`📧 Email Receipt to ${student.email}`, `email_receipt_${student.id}_${transaction.id}`).row();
     }
     kb.text('🔙 View Student', `student_view_${student.id}`).row();
     kb.text('📋 Main Menu', 'menu_main');
@@ -705,9 +705,10 @@ bot.callbackQuery(/^fee_pay_(.+)_(.+)_(.+)$/, async (ctx) => {
 // 6. Resend Email Receipts
 // ==============================================================================
 
-bot.callbackQuery(/^email_receipt_(.+)$/, async (ctx) => {
+bot.callbackQuery(/^email_receipt_([^_]+)(?:_(.+))?$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: 'Sending receipt email via Resend...' });
   const studentId = ctx.match[1];
+  const transactionId = ctx.match[2];
   try {
     const student = await db.getStudentById(studentId);
     if (!student) return ctx.reply('❌ Student not found.');
@@ -719,7 +720,16 @@ bot.callbackQuery(/^email_receipt_(.+)$/, async (ctx) => {
       return;
     }
 
-    const result = await sendReceiptEmail({ student });
+    // Retrieve exact transaction or latest transaction for this student
+    let transaction = null;
+    if (transactionId) {
+      transaction = await db.getTransactionById(transactionId);
+    }
+    if (!transaction) {
+      transaction = await db.getLatestTransactionForStudent(studentId);
+    }
+
+    const result = await sendReceiptEmail({ student, transaction });
 
     if (result.sandbox) {
       await ctx.reply(`
@@ -1249,7 +1259,15 @@ app.post('/api/email/receipt', async (req, res) => {
     const student = await db.getStudentById(studentId);
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
-    const result = await sendReceiptEmail({ student });
+    let transaction = null;
+    if (transactionId) {
+      transaction = await db.getTransactionById(transactionId);
+    }
+    if (!transaction) {
+      transaction = await db.getLatestTransactionForStudent(studentId);
+    }
+
+    const result = await sendReceiptEmail({ student, transaction });
     return res.json(result);
   } catch (err) {
     return res.status(500).json({ error: err.message });

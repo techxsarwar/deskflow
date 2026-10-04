@@ -16,9 +16,9 @@ function getReceiptHtml({ student, transaction, libraryName = 'Vertical Classes'
     : getISTDate();
   
   const timeStr = getISTTime();
-  const receiptNo = transaction?.receipt_number || `INV-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-  const amount = Number(transaction?.amount || student?.amount_paid || 1000).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-  const rawAmountNum = transaction?.amount || student?.amount_paid || 1000;
+  const receiptNo = transaction?.receipt_number || `RCP-${Math.floor(100000 + Math.random() * 900000)}`;
+  const rawAmountNum = transaction?.amount != null ? Number(transaction.amount) : 1000;
+  const amount = rawAmountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 });
   const rawDueNum = student?.amount_due || 0;
   const dueFormatted = Number(rawDueNum).toLocaleString('en-IN', { minimumFractionDigits: 2 });
   const mode = (transaction?.payment_mode || 'UPI').toUpperCase();

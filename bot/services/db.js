@@ -258,11 +258,41 @@ async function collectFee({ studentId, amount, paymentMode = 'upi', remarks = ''
     })
     .eq('id', student.id)
     .select()
-    .single();
+    .maybeSingle();
 
   if (stuError) throw stuError;
 
-  return { transaction: txn, student: updatedStudent };
+  return { transaction: txn, student: updatedStudent || student };
+}
+
+async function getTransactionById(transactionId) {
+  if (!transactionId) return null;
+  const { data, error } = await supabase
+    .from('fee_transactions')
+    .select('*')
+    .eq('id', transactionId)
+    .maybeSingle();
+  if (error) {
+    console.error('getTransactionById error:', error.message);
+    return null;
+  }
+  return data;
+}
+
+async function getLatestTransactionForStudent(studentId) {
+  if (!studentId) return null;
+  const { data, error } = await supabase
+    .from('fee_transactions')
+    .select('*')
+    .eq('student_id', studentId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error('getLatestTransactionForStudent error:', error.message);
+    return null;
+  }
+  return data;
 }
 
 // ==============================================================================
@@ -508,6 +538,8 @@ module.exports = {
   approveAdmission,
   getDefaultersAndExpiries,
   collectFee,
+  getTransactionById,
+  getLatestTransactionForStudent,
   normalizePhone,
   findStudentByPhone,
   checkInStudent,
