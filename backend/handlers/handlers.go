@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"study-lounge-backend/models"
@@ -18,13 +19,27 @@ func NewHandler(store *storage.Store) *Handler {
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(bytes)))
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	_, _ = w.Write(bytes)
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+// GET /ping or keepalive ping for cron services
+func (h *Handler) Ping(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Length", "2")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
 }
 
 // GET /
@@ -38,7 +53,7 @@ func (h *Handler) RootHandler(w http.ResponseWriter, r *http.Request) {
 		"status":    "running",
 		"version":   "1.0.0",
 		"message":   "DeskFlow Golang backend server is online and operational.",
-		"endpoints": []string{"/health", "/api/dashboard", "/api/students", "/api/seats", "/api/fees/transactions"},
+		"endpoints": []string{"/health", "/ping", "/api/dashboard", "/api/students", "/api/seats", "/api/fees/transactions"},
 	})
 }
 

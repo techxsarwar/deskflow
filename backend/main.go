@@ -77,7 +77,11 @@ func initServer() {
 
 	// API Routes
 	mux.HandleFunc("GET /", h.RootHandler)
+	mux.HandleFunc("HEAD /", h.Ping)
 	mux.HandleFunc("GET /health", h.HealthCheck)
+	mux.HandleFunc("HEAD /health", h.Ping)
+	mux.HandleFunc("GET /ping", h.Ping)
+	mux.HandleFunc("HEAD /ping", h.Ping)
 	mux.HandleFunc("GET /api/dashboard", h.GetDashboard)
 
 	// Students
