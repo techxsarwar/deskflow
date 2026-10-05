@@ -207,19 +207,42 @@ func authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// isAllowedOrigin checks if the origin is an authorized frontend origin
+func isAllowedOrigin(origin string) bool {
+	if origin == "" {
+		return false
+	}
+	if origin == "https://thedeskflow.vercel.app" ||
+		origin == "http://localhost:5173" ||
+		origin == "http://localhost:3000" ||
+		origin == "http://localhost:8080" ||
+		origin == "http://localhost:4173" ||
+		origin == "http://127.0.0.1:5173" ||
+		origin == "http://127.0.0.1:3000" ||
+		origin == "http://127.0.0.1:8080" ||
+		origin == "http://127.0.0.1:4173" {
+		return true
+	}
+	// Allow any Vercel deployment preview or production domain
+	if strings.HasPrefix(origin, "https://") && strings.HasSuffix(origin, ".vercel.app") {
+		return true
+	}
+	return false
+}
+
 // corsMiddleware adds CORS headers restricted to trusted frontend origins
 func corsMiddleware(next http.Handler) http.Handler {
-	allowedOrigins := map[string]bool{
-		"https://thedeskflow.vercel.app": true,
-		"http://localhost:5173":          true,
-		"http://localhost:3000":          true,
-		"http://localhost:8080":          true,
-	}
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if allowedOrigins[origin] {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
+		if origin != "" {
+			if isAllowedOrigin(origin) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			} else {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			}
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
@@ -304,6 +327,16 @@ func initServer() {
 	// Reverse proxy Telegram 2FA & email endpoints to the bot on internal port 5001
 	botProxyURL, _ := url.Parse("http://localhost:5001")
 	botProxy := httputil.NewSingleHostReverseProxy(botProxyURL)
+	botProxy.ModifyResponse = func(resp *http.Response) error {
+		// Strip all CORS headers emitted by the internal Node Express bot
+		// so Go's corsMiddleware remains the single authoritative source of truth.
+		resp.Header.Del("Access-Control-Allow-Origin")
+		resp.Header.Del("Access-Control-Allow-Methods")
+		resp.Header.Del("Access-Control-Allow-Headers")
+		resp.Header.Del("Access-Control-Allow-Credentials")
+		resp.Header.Del("Access-Control-Expose-Headers")
+		return nil
+	}
 
 	combinedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/auth") || strings.HasPrefix(r.URL.Path, "/api/email") {

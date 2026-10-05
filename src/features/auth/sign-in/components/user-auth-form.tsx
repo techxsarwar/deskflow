@@ -66,6 +66,43 @@ export function UserAuthForm({ className, redirectTo: _redirectTo, ...props }: U
     },
   })
 
+  // Robust multi-endpoint requester: prefers same-origin relative rewrite on Vercel, falls back to direct API
+  async function postAuthRequest(endpoint: string, payload: Record<string, unknown>): Promise<Response> {
+    const configuredApi = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+    const candidates: string[] = []
+
+    // 1. Same-origin relative path (preferred on Vercel deployment — rewrites via vercel.json without CORS overhead)
+    candidates.push(endpoint)
+
+    // 2. Explicitly configured backend URL or production Render host
+    if (configuredApi) {
+      candidates.push(`${configuredApi}${endpoint}`)
+    }
+    if (!candidates.includes(`https://deskflow-fyp9.onrender.com${endpoint}`)) {
+      candidates.push(`https://deskflow-fyp9.onrender.com${endpoint}`)
+    }
+
+    // 3. Local development ports if running Vite dev server locally
+    if (import.meta.env.DEV) {
+      candidates.push(`http://localhost:8080${endpoint}`, `http://localhost:5001${endpoint}`)
+    }
+
+    let lastError: unknown = null
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        return res
+      } catch (err: unknown) {
+        lastError = err
+      }
+    }
+    throw (lastError instanceof Error ? lastError : new Error('Network connection failed. Unable to reach authentication server.'))
+  }
+
   // Handle Phone Submit -> Generate 4-digit token to Telegram
   async function onPhoneSubmit(data: z.infer<typeof phoneFormSchema>) {
     setIsLoading(true)
@@ -77,25 +114,8 @@ export function UserAuthForm({ className, redirectTo: _redirectTo, ...props }: U
       cleanPhone = cleanPhone.substring(2)
     }
 
-    const botApiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5001' : 'https://deskflow-fyp9.onrender.com')
-
     try {
-      let res: Response
-      try {
-        res = await fetch(`${botApiBase}/api/auth/send-token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: cleanPhone }),
-        })
-      } catch (networkErr) {
-        // Fallback to localhost if deployed API is unreachable
-        res = await fetch('http://localhost:5001/api/auth/send-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: cleanPhone }),
-        })
-      }
-
+      const res = await postAuthRequest('/api/auth/send-token', { phone: cleanPhone })
       const resData = await res.json()
 
       if (!res.ok) {
@@ -123,10 +143,10 @@ export function UserAuthForm({ className, redirectTo: _redirectTo, ...props }: U
       })
 
       navigate({ to: '/otp' })
-    } catch (err: any) {
-      console.error('Phone login error:', err)
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Please check your connection and try again.'
       toast.error('Token Generation Failed', {
-        description: err.message || 'Please check your connection and try again.',
+        description: errorMsg,
       })
     } finally {
       setIsLoading(false)
@@ -141,17 +161,16 @@ export function UserAuthForm({ className, redirectTo: _redirectTo, ...props }: U
     try {
       sessionStorage.setItem('pending_auth_email', data.email)
       try {
-        await fetch('http://localhost:5001/api/auth/send-2fa', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: data.email }),
-        })
-      } catch (e) {}
+        await postAuthRequest('/api/auth/send-2fa', { email: data.email })
+      } catch {
+        // Silently continue if notification attempt failed
+      }
 
       toast.success('🔐 Verification code sent to Telegram!')
       navigate({ to: '/otp' })
-    } catch (error: any) {
-      toast.error('Login failed', { description: error.message })
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to send login code.'
+      toast.error('Login failed', { description: errorMsg })
     } finally {
       setIsLoading(false)
     }

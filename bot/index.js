@@ -3267,8 +3267,34 @@ Happy studying! 📚✨
 // 9. Express HTTP Server for Webhook & Web 2FA Integration
 // ==============================================================================
 
-const app = express();
-app.use(cors());
+const isAllowedBotOrigin = (origin) => {
+  if (!origin) return true;
+  if (
+    origin === 'https://thedeskflow.vercel.app' ||
+    origin === 'http://localhost:5173' ||
+    origin === 'http://localhost:3000' ||
+    origin === 'http://localhost:8080' ||
+    origin === 'http://localhost:4173' ||
+    origin === 'http://127.0.0.1:5173' ||
+    origin === 'http://127.0.0.1:3000' ||
+    origin === 'http://127.0.0.1:8080'
+  ) return true;
+  if (origin.startsWith('https://') && origin.endsWith('.vercel.app')) return true;
+  return false;
+};
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (isAllowedBotOrigin(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // 1. Primary Auth: Dispatch 4-Character Token to verified Admin Telegram (rate-limited)

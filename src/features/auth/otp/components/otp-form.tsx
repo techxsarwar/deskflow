@@ -47,16 +47,36 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
 
   const tokenValue = form.watch('token')
 
-  const botApiBase =
-    import.meta.env.VITE_API_URL ||
-    (import.meta.env.DEV ? 'http://localhost:5001' : 'https://deskflow-fyp9.onrender.com')
+  async function fetchWithFallback(endpoint: string, options: RequestInit): Promise<Response> {
+    const configuredApi = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+    const candidates: string[] = []
 
-  async function fetchWithFallback(endpoint: string, options: RequestInit) {
-    try {
-      return await fetch(`${botApiBase}${endpoint}`, options)
-    } catch {
-      return await fetch(`http://localhost:5001${endpoint}`, options)
+    // 1. Same-origin relative path (preferred on Vercel deployment — rewrites via vercel.json without CORS overhead)
+    candidates.push(endpoint)
+
+    // 2. Explicitly configured backend URL or production Render host
+    if (configuredApi) {
+      candidates.push(`${configuredApi}${endpoint}`)
     }
+    if (!candidates.includes(`https://deskflow-fyp9.onrender.com${endpoint}`)) {
+      candidates.push(`https://deskflow-fyp9.onrender.com${endpoint}`)
+    }
+
+    // 3. Local development ports if running Vite dev server locally
+    if (import.meta.env.DEV) {
+      candidates.push(`http://localhost:8080${endpoint}`, `http://localhost:5001${endpoint}`)
+    }
+
+    let lastError: unknown = null
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url, options)
+        return res
+      } catch (err: unknown) {
+        lastError = err
+      }
+    }
+    throw (lastError instanceof Error ? lastError : new Error('Network connection failed. Unable to reach authentication server.'))
   }
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
@@ -128,9 +148,10 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         toast.success('🎉 2FA Verification Successful!')
         navigate({ to: '/' })
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Please check your code on Telegram and try again.'
       toast.error('Verification Failed', {
-        description: err.message || 'Please check your code on Telegram and try again.',
+        description: errorMsg,
       })
     } finally {
       setIsLoading(false)
@@ -157,8 +178,9 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         })
         toast.success('Fresh verification code sent to Telegram!')
       }
-    } catch (e: any) {
-      toast.error('Resend failed', { description: e.message })
+    } catch (e: unknown) {
+      const errorMsg = e instanceof Error ? e.message : 'Resend request failed'
+      toast.error('Resend failed', { description: errorMsg })
     } finally {
       setIsResending(false)
     }
