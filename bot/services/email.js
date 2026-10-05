@@ -10,6 +10,9 @@ if (process.env.RESEND_API_KEY) {
   resend = new Resend(process.env.RESEND_API_KEY);
 }
 
+// Admin fallback email for Resend sandbox mode (reads from env, no hardcoded PII)
+const ADMIN_FALLBACK_EMAIL = process.env.ADMIN_FALLBACK_EMAIL || '';
+
 function getReceiptHtml({ student, transaction, libraryName = 'Vertical Classes' }) {
   const dateStr = transaction?.payment_date 
     ? getISTDate(transaction.payment_date)
@@ -280,10 +283,10 @@ async function sendReceiptEmail({ student, transaction }) {
         res.error.message?.includes('testing emails') ||
         res.error.message?.includes('only send testing emails')
       ) {
-        console.warn('Resend testing mode: Forwarding receipt to admin email (darsarwar1908@gmail.com)');
+        console.warn(`Resend testing mode: Forwarding receipt to admin fallback email (${ADMIN_FALLBACK_EMAIL})`);
         const fallbackRes = await resend.emails.send({
           from: fromEmail,
-          to: ['darsarwar1908@gmail.com'],
+          to: [ADMIN_FALLBACK_EMAIL],
           subject: `[Student Receipt - Forward to ${student.email}] ${receiptNo} - Vertical Classes`,
           html: `<div style="background:#fef3c7;padding:12px;border-radius:8px;font-size:13px;color:#92400e;margin-bottom:16px;">
             ⚠️ <b>Resend Sandbox Notice:</b> Delivered to your admin email because your custom domain is not yet verified at <a href="https://resend.com/domains">resend.com/domains</a>. You can forward this receipt to <b>${student.email}</b>.
@@ -295,9 +298,9 @@ async function sendReceiptEmail({ student, transaction }) {
           sandbox: true,
           data: fallbackRes.data,
           receiptNo,
-          recipient: 'darsarwar1908@gmail.com',
+          recipient: ADMIN_FALLBACK_EMAIL,
           intendedRecipient: student.email,
-          message: `Receipt dispatched to your admin email (darsarwar1908@gmail.com) for forwarding to ${student.email}.`,
+          message: `Receipt dispatched to admin fallback email for forwarding to ${student.email}.`,
         };
       }
 
@@ -686,10 +689,10 @@ async function sendWifiCredentialsEmail({ student, wifiConfig, libraryName = 'Ve
         res.error.message?.includes('testing emails') ||
         res.error.message?.includes('only send testing emails')
       ) {
-        console.warn(`Resend testing mode: Forwarding WiFi email to admin email (darsarwar1908@gmail.com) for ${student.email}`);
+        console.warn(`Resend testing mode: Forwarding WiFi email to admin fallback email (${ADMIN_FALLBACK_EMAIL}) for ${student.email}`);
         const fallbackRes = await resend.emails.send({
           from: fromEmail,
-          to: ['darsarwar1908@gmail.com'],
+          to: [ADMIN_FALLBACK_EMAIL],
           subject: `[Student Wi-Fi Pass - Forward to ${student.email}] ${student.full_name} — ${libraryName}`,
           html: `<div style="background:#fef3c7;padding:12px;border-radius:8px;font-size:13px;color:#92400e;margin-bottom:16px;">
             ⚠️ <b>Resend Sandbox Notice:</b> Delivered to admin email because custom domain is in testing mode. Please forward to <b>${student.email}</b>.
@@ -700,7 +703,7 @@ async function sendWifiCredentialsEmail({ student, wifiConfig, libraryName = 'Ve
           success: true,
           sandbox: true,
           data: fallbackRes.data,
-          recipient: 'darsarwar1908@gmail.com',
+          recipient: ADMIN_FALLBACK_EMAIL,
           intendedRecipient: student.email,
           studentName: student.full_name,
         };
@@ -904,7 +907,7 @@ async function broadcastAnnouncement({ students, title, body, libraryName = 'Ver
         console.warn('Resend testing mode: Forwarding BCC announcement to admin email');
         const fallbackRes = await resend.emails.send({
           from: fromEmail,
-          to: ['darsarwar1908@gmail.com'],
+          to: [ADMIN_FALLBACK_EMAIL],
           subject: `[BCC Announcement - Intended for ${bccEmails.length} Students] ${title} — ${libraryName}`,
           html:
             `<div style="background:#fef3c7;padding:12px;border-radius:8px;font-size:13px;color:#92400e;margin-bottom:16px;">

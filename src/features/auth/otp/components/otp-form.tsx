@@ -89,7 +89,7 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         }
 
         auth.setUser(user)
-        auth.setAccessToken('deskflow-telegram-admin-token')
+        auth.setAccessToken(result.token || 'deskflow-telegram-admin-token')
         sessionStorage.removeItem('pending_auth_phone')
 
         toast.success(`🎉 Welcome, ${user.name}!`, {
@@ -122,7 +122,7 @@ export function OtpForm({ className, ...props }: OtpFormProps) {
         }
 
         auth.setUser(user)
-        auth.setAccessToken('deskflow-telegram-2fa-token')
+        auth.setAccessToken(result.token || 'deskflow-telegram-admin-token')
         sessionStorage.removeItem('pending_auth_email')
 
         toast.success('🎉 2FA Verification Successful!')

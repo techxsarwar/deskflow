@@ -114,12 +114,19 @@ async function assignSeat(seatNumber, studentId, studentName, shift = 'fullday')
 }
 
 // Students
+function sanitizeFilterTerm(raw) {
+  // Strip PostgREST special characters that could break .or() filter logic
+  return (raw || '').replace(/[,.()'"\\]/g, '').trim();
+}
+
 async function searchStudents(query = '') {
   let q = supabase.from('students').select('*').order('created_at', { ascending: false });
 
   if (query && query.trim() !== '') {
-    const term = query.trim();
-    q = q.or(`full_name.ilike.%${term}%,phone.ilike.%${term}%,reg_no.ilike.%${term}%,seat_number.ilike.%${term}%`);
+    const term = sanitizeFilterTerm(query);
+    if (term) {
+      q = q.or(`full_name.ilike.%${term}%,phone.ilike.%${term}%,reg_no.ilike.%${term}%,seat_number.ilike.%${term}%`);
+    }
   }
 
   const { data, error } = await q.limit(25);
@@ -648,7 +655,8 @@ async function checkAndAutoResetExpiredBreaks() {
 
 async function getStudentPresenceStatus(query) {
   if (!query || query.trim() === '') return null;
-  const term = query.trim();
+  const term = sanitizeFilterTerm(query);
+  if (!term) return null;
 
   // Search student by name, phone, reg_no, or seat_number
   let q = supabase
@@ -890,15 +898,16 @@ async function getAdminByPhone(phone) {
     console.warn('[DB] admin_accounts query warning:', err.message);
   }
 
-  // 2. Check environment variable fallback
-  const envPhone = (process.env.ADMIN_PHONE || '9149847965').replace(/[^0-9]/g, '');
+  // 2. Check environment variable fallback (env vars required — no hardcoded PII)
+  const envPhone = (process.env.ADMIN_PHONE || '').replace(/[^0-9]/g, '');
   const envClean = (envPhone.length === 12 && envPhone.startsWith('91')) ? envPhone.substring(2) : envPhone;
-  if (clean === envClean) {
+  const envChatId = (process.env.ADMIN_CHAT_ID || '').toString();
+  if (envClean && envChatId && clean === envClean) {
     return {
       id: 'ADM-PRIMARY',
       phone: clean,
-      name: process.env.ADMIN_NAME || 'Sarwar Altaf Dar',
-      telegram_chat_id: (process.env.ADMIN_CHAT_ID || '8707444480').toString(),
+      name: process.env.ADMIN_NAME || 'Admin',
+      telegram_chat_id: envChatId,
       role: 'superadmin',
       is_active: true,
     };
@@ -947,8 +956,8 @@ async function getAllAdmins() {
 async function isAdminChatId(chatId) {
   if (!chatId) return false;
   const strId = chatId.toString();
-  const envAdminId = (process.env.ADMIN_CHAT_ID || '8707444480').toString();
-  if (strId === envAdminId) return true;
+  const envAdminId = (process.env.ADMIN_CHAT_ID || '').toString();
+  if (envAdminId && strId === envAdminId) return true;
 
   try {
     const { data } = await supabase

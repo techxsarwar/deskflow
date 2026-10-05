@@ -1,6 +1,9 @@
 import axios from 'axios'
 import { Student, FeeTransaction, LoungeSeat, LoungeSummaryStats, PaymentMode } from '../types'
 
+import { getCookie } from '@/lib/cookies'
+import { ACCESS_TOKEN } from '@/stores/auth-store'
+
 // In production on Vercel (same-origin multi-service routing), requests default to relative ''
 // In local Vite dev, defaults to http://localhost:8080 unless VITE_API_URL is explicitly set
 const API_BASE_URL =
@@ -12,6 +15,26 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+})
+
+// Attach Admin Authentication Token to all outgoing requests
+api.interceptors.request.use((config) => {
+  if (typeof document !== 'undefined') {
+    const rawCookie = getCookie(ACCESS_TOKEN)
+    if (rawCookie) {
+      try {
+        const token = JSON.parse(rawCookie)
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`
+          config.headers['X-Admin-Token'] = token
+        }
+      } catch {
+        config.headers.Authorization = `Bearer ${rawCookie}`
+        config.headers['X-Admin-Token'] = rawCookie
+      }
+    }
+  }
+  return config
 })
 
 export const studyLoungeApi = {

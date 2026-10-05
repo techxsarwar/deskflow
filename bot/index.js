@@ -13,7 +13,13 @@ const {
   broadcastWifiCredentials,
   broadcastAnnouncement,
 } = require('./services/email');
-const { sendPhoneToken, verifyPhoneToken, sendTelegramOtp, verifyTelegramOtp } = require('./services/otp');
+const {
+  sendPhoneToken,
+  verifyPhoneToken,
+  sendTelegramOtp,
+  verifyTelegramOtp,
+  verifyAdminSessionToken,
+} = require('./services/otp');
 const { getISTTime, getISTDate, getISTDateString } = require('./services/time');
 
 // Configuration
@@ -21,6 +27,79 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 let ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID ? parseInt(process.env.ADMIN_CHAT_ID, 10) : 0;
 const WEB_APP_URL = process.env.WEB_APP_URL || '';
 const PORT = process.env.PORT || 5001;
+
+// Helper: Broadcast high-priority security/operational alerts to all active administrators
+async function broadcastToAdmins(message, options = { parse_mode: 'HTML' }) {
+  const adminIds = new Set();
+  if (ADMIN_CHAT_ID) {
+    adminIds.add(ADMIN_CHAT_ID.toString());
+  }
+  try {
+    const admins = await db.getAllAdmins();
+    for (const a of admins) {
+      if (a.telegram_chat_id && a.is_active !== false) {
+        adminIds.add(a.telegram_chat_id.toString());
+      }
+    }
+  } catch (err) {
+    console.warn('[Broadcast] Error fetching admin accounts:', err.message);
+  }
+
+  const promises = [];
+  for (const chatId of adminIds) {
+    promises.push(
+      bot.api.sendMessage(chatId, message, options).catch((e) => {
+        console.warn(`[Broadcast] Could not send to admin ${chatId}:`, e.message);
+      })
+    );
+  }
+  return Promise.all(promises);
+}
+
+// In-memory rate limiting middleware
+function createRateLimiter({ windowMs = 60000, max = 10, message = 'Too many requests, please try again later.' } = {}) {
+  const requests = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ip, data] of requests.entries()) {
+      if (now > data.resetTime) requests.delete(ip);
+    }
+  }, 60000).unref();
+
+  return (req, res, next) => {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    let record = requests.get(ip);
+    if (!record || now > record.resetTime) {
+      record = { count: 1, resetTime: now + windowMs };
+      requests.set(ip, record);
+      return next();
+    }
+    record.count++;
+    if (record.count > max) {
+      return res.status(429).json({ error: message });
+    }
+    next();
+  };
+}
+
+const authLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: 'Too many authentication attempts. Please wait 1 minute before trying again.',
+});
+
+const verifyLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: 'Too many verification attempts. Please wait 1 minute before trying again.',
+});
+
+const emailLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: 'Rate limit exceeded for email requests. Please wait 1 minute.',
+});
 
 if (!BOT_TOKEN) {
   console.error('FATAL: TELEGRAM_BOT_TOKEN is missing in bot/.env');
@@ -190,45 +269,48 @@ Leaving for the day? To log your total study hours:
 bot.callbackQuery('student_break_guide', async (ctx) => {
   await ctx.answerCallbackQuery();
   let student = studentChatMap.get(ctx.chat.id);
-  if (!student) {
-    const { currentlyInside } = await db.getTodayAttendance();
-    if (currentlyInside.length === 1) {
-      student = await db.getStudentById(currentlyInside[0].student_id);
-      if (student) studentChatMap.set(ctx.chat.id, student);
-    }
-  }
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
 
   if (student) {
     return showBreakOptions(ctx, student, false);
   }
 
-  const { currentlyInside } = await db.getTodayAttendance();
-  if (currentlyInside.length === 0) {
-    return ctx.reply('⚠️ No students are currently checked in inside the library hall. Please Check In first before taking a break.');
+  // Admins can manage breaks for all active students
+  if (isAdmin) {
+    const { currentlyInside } = await db.getTodayAttendance();
+    if (currentlyInside.length === 0) {
+      return ctx.reply('⚠️ No students are currently checked in inside the library hall.');
+    }
+
+    const kb = new InlineKeyboard();
+    for (const s of currentlyInside.slice(0, 10)) {
+      kb.text(`🪑 ${s.student_name} (${s.seat_number})`, `break_select_${s.student_id}`).row();
+    }
+    kb.text('🔙 Cancel', 'student_menu_refresh');
+
+    return ctx.reply('🚻 <b>[Admin Mode] Select student to manage break:</b>', {
+      parse_mode: 'HTML',
+      reply_markup: kb,
+    });
   }
 
-  const kb = new InlineKeyboard();
-  for (const s of currentlyInside.slice(0, 10)) {
-    kb.text(`🪑 ${s.student_name} (${s.seat_number})`, `break_select_${s.student_id}`).row();
-  }
-  kb.text('🔙 Cancel', 'student_menu_refresh');
+  // Non-admin without verified check-in must check in first
+  return ctx.reply(`
+⚠️ <b>Check-In Required to Take Break</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You must <b>Check In</b> at the library entrance with your registered mobile number first so the system knows which desk belongs to you.
 
-  await ctx.reply('🚻 <b>Select your desk / name to start break:</b>', {
+👉 Send <code>/start</code> and tap <b>🚪 Check In Guide</b>.
+`, {
     parse_mode: 'HTML',
-    reply_markup: kb,
+    reply_markup: getStudentMenuKeyboard(),
   });
 });
 
 bot.callbackQuery('student_back_guide', async (ctx) => {
   await ctx.answerCallbackQuery();
   let student = studentChatMap.get(ctx.chat.id);
-  if (!student) {
-    const { currentlyInside } = await db.getTodayAttendance();
-    if (currentlyInside.length === 1) {
-      student = await db.getStudentById(currentlyInside[0].student_id);
-      if (student) studentChatMap.set(ctx.chat.id, student);
-    }
-  }
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
 
   if (student) {
     const activeBreak = await db.getActiveBreakForStudent(student.id);
@@ -252,7 +334,7 @@ Happy studying! 📚✨
     }
   }
 
-  return ctx.reply('ℹ️ If you are returning from break, send <code>/back</code> or tap the back button on your break message.', {
+  return ctx.reply('ℹ️ If you are returning from break, send <code>/back</code> or ensure your attendance was checked in today.', {
     parse_mode: 'HTML',
     reply_markup: getStudentMenuKeyboard(),
   });
@@ -428,9 +510,11 @@ Leaving for the day? To log your total study hours:
   }
 
   // Authenticated Admin Hub
-  ADMIN_CHAT_ID = ctx.chat.id;
+  if (!ADMIN_CHAT_ID) {
+    ADMIN_CHAT_ID = ctx.chat.id;
+  }
   const name = ctx.from?.first_name || 'Librarian';
-  const adminPhone = process.env.ADMIN_PHONE || '9149847965';
+  const adminPhone = process.env.ADMIN_PHONE || 'Not configured';
 
   const welcomeText = `
 🏛 <b>Welcome to DeskFlow Operating System!</b>
@@ -465,13 +549,15 @@ bot.command('setphone', async (ctx) => {
 To bind your Telegram account to your mobile phone for secure web dashboard login:
 
 Send: <code>/setphone [Your 10-Digit Mobile Number]</code>
-<i>Example: <code>/setphone 9149847965</code></i>
+<i>Example: <code>/setphone 9876543210</code></i>
 `, { parse_mode: 'HTML' });
   }
 
   try {
     const admin = await db.linkAdminPhone(ctx.chat.id, phoneInput, ctx.from?.first_name || 'Admin');
-    ADMIN_CHAT_ID = ctx.chat.id;
+    if (!ADMIN_CHAT_ID) {
+      ADMIN_CHAT_ID = ctx.chat.id;
+    }
     await ctx.reply(`
 ✅ <b>Admin Phone Successfully Linked!</b>
 ━━━━━━━━━━━━━━━━━━━━━
@@ -1284,13 +1370,12 @@ You are outside the library premises. Remote attendance is strictly prohibited, 
         reply_markup: { remove_keyboard: true },
       });
 
-      // Alert Librarian / Admin of remote check-in attempt
-      if (ADMIN_CHAT_ID) {
-        try {
-          const studentPhone = student.phone || 'N/A';
-          const parentPhone = student.emergency_contact || 'N/A';
+      // Alert all Administrators of remote check-in attempt
+      try {
+        const studentPhone = student.phone || 'N/A';
+        const parentPhone = student.emergency_contact || 'N/A';
 
-          const adminAlertText = `
+        const adminAlertText = `
 🚨 <b>[Remote Attendance Blocked]</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👤 <b>Student:</b> ${student.full_name}
@@ -1307,21 +1392,16 @@ You are outside the library premises. Remote attendance is strictly prohibited, 
 <b>We are NOT responsible for him/her right now as they are outside library premises!</b>
 `;
 
-          const alertKb = new InlineKeyboard()
-            .text('👤 View Student Details', `student_view_${student.id}`)
-            .row();
+        const alertKb = new InlineKeyboard()
+          .text('👤 View Student Details', `student_view_${student.id}`)
+          .row();
 
-          await bot.api.sendMessage(
-            ADMIN_CHAT_ID,
-            adminAlertText,
-            {
-              parse_mode: 'HTML',
-              reply_markup: alertKb,
-            }
-          );
-        } catch (e) {
-          console.error('Failed to dispatch remote attendance alert to admin:', e);
-        }
+        await broadcastToAdmins(adminAlertText, {
+          parse_mode: 'HTML',
+          reply_markup: alertKb,
+        });
+      } catch (e) {
+        console.error('Failed to dispatch remote attendance alert to admins:', e);
       }
       return;
     }
@@ -1352,15 +1432,9 @@ You are outside the library premises. Remote attendance is strictly prohibited, 
         reply_markup: { remove_keyboard: true },
       });
 
-      if (ADMIN_CHAT_ID) {
-        try {
-          await bot.api.sendMessage(
-            ADMIN_CHAT_ID,
-            `🔴 <b>[Check-Out Notice]</b>\n👤 <b>${student.full_name}</b> checked out from Desk <b>${student.seat_number}</b> at ${nowTime} (IST).\n⏱ Studied: <b>${durationStr}</b>\n📍 GPS Verified (${distanceMeters}m from center).`,
-            { parse_mode: 'HTML' }
-          );
-        } catch (e) {}
-      }
+      await broadcastToAdmins(
+        `🔴 <b>[Check-Out Notice]</b>\n👤 <b>${student.full_name}</b> checked out from Desk <b>${student.seat_number}</b> at ${nowTime} (IST).\n⏱ Studied: <b>${durationStr}</b>\n📍 GPS Verified (${distanceMeters}m from center).`
+      );
       return;
     }
 
@@ -1390,15 +1464,9 @@ You are outside the library premises. Remote attendance is strictly prohibited, 
       reply_markup: studentActionKb,
     });
 
-    if (ADMIN_CHAT_ID) {
-      try {
-        await bot.api.sendMessage(
-          ADMIN_CHAT_ID,
-          `🟢 <b>[Check-In Notice]</b>\n👤 <b>${student.full_name}</b> entered and occupied Desk <b>${student.seat_number}</b> at ${nowTime} (IST) [${shiftText}].\n📍 GPS Verified (${distanceMeters}m from center).`,
-          { parse_mode: 'HTML' }
-        );
-      } catch (e) {}
-    }
+    await broadcastToAdmins(
+      `🟢 <b>[Check-In Notice]</b>\n👤 <b>${student.full_name}</b> entered and occupied Desk <b>${student.seat_number}</b> at ${nowTime} (IST) [${shiftText}].\n📍 GPS Verified (${distanceMeters}m from center).`
+    );
   } catch (err) {
     console.error('Location attendance error:', err);
     await ctx.reply(`❌ Attendance error: ${err.message}`, {
@@ -3079,6 +3147,13 @@ bot.callbackQuery('menu_breaks', async (ctx) => {
 bot.callbackQuery(/^break_start_prompt_(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const studentId = ctx.match[1];
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
+  const currentMapped = studentChatMap.get(ctx.chat.id);
+
+  if (!isAdmin && (!currentMapped || currentMapped.id !== studentId)) {
+    return ctx.reply('⛔ <b>Access Denied:</b> You can only manage breaks for your own verified student profile.', { parse_mode: 'HTML' });
+  }
+
   const student = await db.getStudentById(studentId);
   if (!student) return ctx.reply('❌ Student not found.');
   studentChatMap.set(ctx.chat.id, student);
@@ -3088,6 +3163,13 @@ bot.callbackQuery(/^break_start_prompt_(.+)$/, async (ctx) => {
 bot.callbackQuery(/^break_select_(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const studentId = ctx.match[1];
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
+  const currentMapped = studentChatMap.get(ctx.chat.id);
+
+  if (!isAdmin && (!currentMapped || currentMapped.id !== studentId)) {
+    return ctx.reply('⛔ <b>Access Denied:</b> You can only manage breaks for your own verified student profile.', { parse_mode: 'HTML' });
+  }
+
   const student = await db.getStudentById(studentId);
   if (!student) return ctx.reply('❌ Student not found.');
   studentChatMap.set(ctx.chat.id, student);
@@ -3098,6 +3180,12 @@ bot.callbackQuery(/^break_start_([^_]+)_(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const studentId = ctx.match[1];
   const duration = parseInt(ctx.match[2], 10);
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
+  const currentMapped = studentChatMap.get(ctx.chat.id);
+
+  if (!isAdmin && (!currentMapped || currentMapped.id !== studentId)) {
+    return ctx.reply('⛔ <b>Access Denied:</b> You can only start breaks for your own verified student profile.', { parse_mode: 'HTML' });
+  }
 
   try {
     const res = await db.startStudentBreak({
@@ -3145,6 +3233,13 @@ bot.callbackQuery(/^break_start_([^_]+)_(\d+)$/, async (ctx) => {
 bot.callbackQuery(/^break_end_(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery({ text: 'Welcome back!' });
   const studentId = ctx.match[1];
+  const isAdmin = await db.isAdminChatId(ctx.chat.id);
+  const currentMapped = studentChatMap.get(ctx.chat.id);
+
+  if (!isAdmin && (!currentMapped || currentMapped.id !== studentId)) {
+    return ctx.reply('⛔ <b>Access Denied:</b> You can only end breaks for your own verified student profile.', { parse_mode: 'HTML' });
+  }
+
   try {
     await db.endStudentBreak({ studentId });
     const student = await db.getStudentById(studentId);
@@ -3176,8 +3271,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. Primary Auth: Dispatch 4-Character Token to verified Admin Telegram
-app.post('/api/auth/send-token', async (req, res) => {
+// 1. Primary Auth: Dispatch 4-Character Token to verified Admin Telegram (rate-limited)
+app.post('/api/auth/send-token', authLimiter, async (req, res) => {
   const { phone } = req.body;
   if (!phone) {
     return res.status(400).json({ error: 'Mobile phone number is required' });
@@ -3197,8 +3292,8 @@ app.post('/api/auth/send-token', async (req, res) => {
   }
 });
 
-// 2. Primary Auth: Verify 4-Character Token
-app.post('/api/auth/verify-token', async (req, res) => {
+// 2. Primary Auth: Verify 4-Character Token (rate-limited)
+app.post('/api/auth/verify-token', verifyLimiter, async (req, res) => {
   const { phone, token } = req.body;
   if (!phone || !token) {
     return res.status(400).json({ error: 'Phone number and 4-digit token are required' });
@@ -3213,15 +3308,34 @@ app.post('/api/auth/verify-token', async (req, res) => {
   }
 });
 
-// Fallback 2FA: Dispatch OTP to Telegram
-app.post('/api/auth/send-2fa', async (req, res) => {
+// Fallback 2FA: Dispatch OTP to Telegram (rate-limited + email authorization verification)
+app.post('/api/auth/send-2fa', authLimiter, async (req, res) => {
   const { email } = req.body;
   if (!email) {
     return res.status(400).json({ error: 'Email is required' });
   }
 
+  // Security Check: Verify email belongs to an authorized admin
+  const cleanEmail = email.toLowerCase().trim();
+  const fallbackEmail = (process.env.ADMIN_FALLBACK_EMAIL || '').toLowerCase().trim();
+  const adminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+  let isAuthorized = (cleanEmail === fallbackEmail && fallbackEmail !== '') || 
+                     (cleanEmail === adminEmail && adminEmail !== '');
+
+  if (!isAuthorized) {
+    try {
+      const admins = await db.getAllAdmins();
+      isAuthorized = admins.some(a => (a.email || '').toLowerCase().trim() === cleanEmail);
+    } catch (e) {}
+  }
+
+  if (!isAuthorized) {
+    return res.status(403).json({ error: 'Access Denied: Unregistered administrator email.' });
+  }
+
   try {
-    const result = await sendTelegramOtp(bot, email, ADMIN_CHAT_ID);
+    const targetChatId = ADMIN_CHAT_ID || (await db.getAllAdmins())[0]?.telegram_chat_id;
+    const result = await sendTelegramOtp(bot, cleanEmail, targetChatId);
     return res.json({
       success: true,
       message: '2FA code sent to Telegram bot @controllibrarybot',
@@ -3233,28 +3347,34 @@ app.post('/api/auth/send-2fa', async (req, res) => {
   }
 });
 
-// 2FA: Verify OTP
-app.post('/api/auth/verify-2fa', async (req, res) => {
+// 2FA: Verify OTP (rate-limited)
+app.post('/api/auth/verify-2fa', verifyLimiter, async (req, res) => {
   const { email, otp } = req.body;
   if (!email || !otp) {
     return res.status(400).json({ error: 'Email and 6-digit OTP code are required' });
   }
 
   try {
-    const result = await verifyTelegramOtp(bot, email, otp, ADMIN_CHAT_ID);
-    return res.json({
-      success: true,
-      verified: true,
-      message: 'Authentication successful',
-    });
+    const targetChatId = ADMIN_CHAT_ID || (await db.getAllAdmins())[0]?.telegram_chat_id;
+    const result = await verifyTelegramOtp(bot, email, otp, targetChatId);
+    return res.json(result);
   } catch (error) {
     console.error('2FA verification error:', error);
     return res.status(401).json({ error: error.message });
   }
 });
 
-// Email Receipt Endpoint (called by Web app or external trigger)
-app.post('/api/email/receipt', async (req, res) => {
+// Email Receipt Endpoint (rate-limited, requires valid admin session token)
+app.post('/api/email/receipt', emailLimiter, async (req, res) => {
+  const authHeader = req.headers['x-admin-token'] || req.headers['authorization'];
+  const internalProxy = req.headers['x-internal-proxy'];
+  const token = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
+  const admin = verifyAdminSessionToken(token);
+
+  if (!admin && !internalProxy) {
+    return res.status(401).json({ error: 'Authentication required. Valid admin token missing or expired.' });
+  }
+
   const { studentId, transactionId } = req.body;
   try {
     const student = await db.getStudentById(studentId);
@@ -3275,8 +3395,17 @@ app.post('/api/email/receipt', async (req, res) => {
   }
 });
 
-// Email Reminder Endpoint (called by Web app or cron)
-app.post('/api/email/reminder', async (req, res) => {
+// Email Reminder Endpoint (rate-limited, requires valid admin session token)
+app.post('/api/email/reminder', emailLimiter, async (req, res) => {
+  const authHeader = req.headers['x-admin-token'] || req.headers['authorization'];
+  const internalProxy = req.headers['x-internal-proxy'];
+  const token = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
+  const admin = verifyAdminSessionToken(token);
+
+  if (!admin && !internalProxy) {
+    return res.status(401).json({ error: 'Authentication required. Valid admin token missing or expired.' });
+  }
+
   const { studentId } = req.body;
   try {
     const student = await db.getStudentById(studentId);
@@ -3289,12 +3418,11 @@ app.post('/api/email/reminder', async (req, res) => {
   }
 });
 
-// Health check
+// Health check (no sensitive data exposed)
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     bot: '@controllibrarybot',
-    adminChatId: ADMIN_CHAT_ID,
     resendConfigured: !!process.env.RESEND_API_KEY,
   });
 });

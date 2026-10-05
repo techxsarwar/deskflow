@@ -29,17 +29,23 @@ async function migrate() {
     
     DROP POLICY IF EXISTS "Allow all on admin_accounts" ON public.admin_accounts;
     CREATE POLICY "Allow all on admin_accounts" ON public.admin_accounts FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
-
-    -- Insert default Superadmin Sarwar Altaf Dar
-    INSERT INTO public.admin_accounts (phone, name, telegram_chat_id, role, is_active)
-    VALUES ('9149847965', 'Sarwar Altaf Dar', '8707444480', 'superadmin', true)
-    ON CONFLICT (phone) DO UPDATE
-    SET telegram_chat_id = EXCLUDED.telegram_chat_id,
-        name = EXCLUDED.name,
-        is_active = true;
   `;
-
   await client.query(sql);
+
+  // Insert default Superadmin from environment variables
+  const adminPhone = (process.env.ADMIN_PHONE || '9999999999').replace(/[^0-9]/g, '');
+  const adminName = process.env.ADMIN_NAME || 'Lead Administrator';
+  const adminChatId = (process.env.ADMIN_CHAT_ID || '0000000000').toString();
+
+    const insertSql = `
+      INSERT INTO public.admin_accounts (phone, name, telegram_chat_id, role, is_active)
+      VALUES ($1, $2, $3, 'superadmin', true)
+      ON CONFLICT (phone) DO UPDATE
+      SET telegram_chat_id = EXCLUDED.telegram_chat_id,
+          name = EXCLUDED.name,
+          is_active = true;
+    `;
+    await client.query(insertSql, [adminPhone, adminName, adminChatId]);
   console.log('Successfully created and seeded admin_accounts table in Supabase!');
 
   const { rows } = await client.query('SELECT * FROM public.admin_accounts;');
