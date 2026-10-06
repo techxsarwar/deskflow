@@ -399,18 +399,26 @@ function buildMonthlyReportPdf(data) {
         const isEven = i % 2 === 0;
         doc.rect(36, doc.y, contentWidth, rowHeight).fillAndStroke(isEven ? '#ffffff' : cardBg, borderColor);
 
-        doc.fillColor(mutedColor).fontSize(7).font('Helvetica').text(String(row.index), colX.num + 4, doc.y + 4);
-        doc.fillColor(primaryColor).fontSize(7).font('Helvetica-Bold').text(row.dateFormatted, colX.date, doc.y + 4);
-        doc.fillColor(successColor).fontSize(7).font('Helvetica').text(row.checkInTime, colX.punchIn, doc.y + 4);
+        const idxText = String(row.index != null ? row.index : i + 1);
+        const dateText = String(row.dateFormatted || row.date || 'N/A');
+        const inText = String(row.checkInTime || row.punchInTime || 'N/A');
+        const outText = String(row.status === 'checked_in' ? 'Still Active' : (row.checkOutTime || row.punchOutTime || 'N/A'));
+        const breakText = String(row.breakDurationFormatted || '0h 0m 0s');
+        const netText = String(row.netDurationFormatted || '0h 0m 0s');
+        const geoText = String(row.geofenceStatus || (row.isGpsVerified ? 'Verified (GPS)' : 'Verified (Desk)'));
+
+        doc.fillColor(mutedColor).fontSize(7).font('Helvetica').text(idxText, colX.num + 4, doc.y + 4);
+        doc.fillColor(primaryColor).fontSize(7).font('Helvetica-Bold').text(dateText, colX.date, doc.y + 4);
+        doc.fillColor(successColor).fontSize(7).font('Helvetica').text(inText, colX.punchIn, doc.y + 4);
 
         const outColor = row.status === 'checked_in' ? '#d97706' : primaryColor;
-        doc.fillColor(outColor).fontSize(7).font('Helvetica').text(row.checkOutTime, colX.punchOut, doc.y + 4);
+        doc.fillColor(outColor).fontSize(7).font('Helvetica').text(outText, colX.punchOut, doc.y + 4);
 
-        doc.fillColor(mutedColor).fontSize(7).font('Helvetica').text(row.breakDurationFormatted, colX.breaks, doc.y + 4);
-        doc.fillColor(secondaryColor).fontSize(7).font('Helvetica-Bold').text(row.netDurationFormatted, colX.duration, doc.y + 4);
+        doc.fillColor(mutedColor).fontSize(7).font('Helvetica').text(breakText, colX.breaks, doc.y + 4);
+        doc.fillColor(secondaryColor).fontSize(7).font('Helvetica-Bold').text(netText, colX.duration, doc.y + 4);
 
-        const geoColor = row.geofenceStatus.includes('Verified') ? successColor : '#d97706';
-        doc.fillColor(geoColor).fontSize(6.5).font('Helvetica').text(row.geofenceStatus, colX.geofence, doc.y + 4, { width: colWidths.geofence, lineBreak: false });
+        const geoColor = geoText.includes('Verified') ? successColor : '#d97706';
+        doc.fillColor(geoColor).fontSize(6.5).font('Helvetica').text(geoText, colX.geofence, doc.y + 4, { width: colWidths.geofence, lineBreak: false });
 
         doc.y += rowHeight;
       });
