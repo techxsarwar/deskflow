@@ -3318,6 +3318,8 @@ Happy studying! 📚✨
 // 9. Express HTTP Server for Webhook & Web 2FA Integration
 // ==============================================================================
 
+const app = express();
+
 const isAllowedBotOrigin = (origin) => {
   if (!origin) return true;
   if (
