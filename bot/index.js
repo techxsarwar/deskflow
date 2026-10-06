@@ -1,4 +1,4 @@
-const { Bot, InlineKeyboard, Keyboard } = require('grammy');
+const { Bot, InlineKeyboard, Keyboard, InputFile } = require('grammy');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -1502,10 +1502,15 @@ bot.command('menu', async (ctx) => {
 });
 
 // Global error handler to ensure bot never crashes on Telegram API errors
-bot.catch((err) => {
+bot.catch(async (err) => {
   const ctx = err.ctx;
   const msg = err.error?.description || err.error?.message || err.message;
   console.warn(`[Bot Warning] Handled update ${ctx?.update?.update_id}: ${msg}`);
+  if (ctx && ctx.chat) {
+    try {
+      await ctx.reply(`⚠️ <b>Error:</b> <i>${msg || 'An unexpected error occurred. Please try again.'}</i>`, { parse_mode: 'HTML' });
+    } catch (_) {}
+  }
 });
 
 async function safeEdit(ctx, text, options) {
@@ -3292,7 +3297,7 @@ async function handleReportStudentSearch(ctx, query) {
     }
 
     if (students.length === 1) {
-      return showReportYearSelection(ctx, students[0], false);
+      return await showReportYearSelection(ctx, students[0], false);
     }
 
     // Multiple matches -> Let admin choose from buttons
