@@ -340,6 +340,7 @@ func initServer() {
 
 	combinedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/auth") || strings.HasPrefix(r.URL.Path, "/api/email") || strings.HasPrefix(r.URL.Path, "/api/reports") {
+			r.Header.Set("x-internal-proxy", "true")
 			botProxy.ServeHTTP(w, r)
 			return
 		}

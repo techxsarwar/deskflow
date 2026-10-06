@@ -447,10 +447,12 @@ async function getMainMenuKeyboard(radius) {
     .text('📥 Admissions Queue', 'menu_admissions')
     .text('📊 Daily Stats', 'menu_stats')
     .row()
+    .text('📄 Monthly Audit PDF', 'menu_monthly_report')
     .text('📷 Attendance QRs', 'menu_qrs')
-    .text(`🛡 Check-In Range (${r}m)`, 'menu_geofence')
     .row()
+    .text(`🛡 Check-In Range (${r}m)`, 'menu_geofence')
     .text('📶 WiFi Credentials', 'menu_wifi')
+    .row()
     .text('📢 Post Announcement', 'menu_announcement')
     .row();
 
@@ -948,6 +950,13 @@ bot.on('message:text', async (ctx, next) => {
       adminFlowState.delete(chatId);
       return ctx.reply('⛔ <b>Access Denied:</b> Administrator privileges required.', { parse_mode: 'HTML' });
     }
+  }
+
+  // Monthly Report Search Flow
+  if (state && state.action === 'awaiting_report_query') {
+    adminFlowState.delete(chatId);
+    const query = ctx.message.text.trim();
+    return handleReportStudentSearch(ctx, query);
   }
 
   // Announcement Flow - Step 1: Subject / Title
@@ -3312,6 +3321,229 @@ Happy studying! 📚✨
   } catch (err) {
     await ctx.reply(`❌ Error: ${err.message}`);
   }
+});
+
+// ==============================================================================
+// 8.5. Interactive Student Monthly Audit Report (/report [student])
+// ==============================================================================
+
+async function handleReportStudentSearch(ctx, query) {
+  try {
+    const students = await db.searchStudents(query);
+    if (!students || students.length === 0) {
+      return ctx.reply(`❌ No student found matching "<b>${query}</b>".\nPlease check spelling or search by student phone/seat.`, {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard().text('🔍 Search Again', 'report_search_again').text('❌ Cancel', 'report_cancel'),
+      });
+    }
+
+    if (students.length === 1) {
+      return showReportYearSelection(ctx, students[0], false);
+    }
+
+    // Multiple matches -> Let admin choose from buttons
+    const keyboard = new InlineKeyboard();
+    for (const s of students.slice(0, 8)) {
+      keyboard.text(`👤 ${s.full_name} (${s.seat_number || 'No Desk'})`, `rpt_stu_${s.id}`).row();
+    }
+    keyboard.text('❌ Cancel', 'report_cancel');
+
+    return ctx.reply(`
+🔍 <b>Multiple Students Found:</b>
+Found <b>${students.length}</b> student(s) matching "<i>${query}</i>". Please select:
+`, {
+      parse_mode: 'HTML',
+      reply_markup: keyboard,
+    });
+  } catch (err) {
+    return ctx.reply(`❌ Search error: ${err.message}`);
+  }
+}
+
+async function showReportYearSelection(ctx, student, edit = false) {
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear - 1, currentYear, currentYear + 1];
+
+  const keyboard = new InlineKeyboard();
+  for (const y of years) {
+    keyboard.text(`📅 ${y}`, `rpt_yr_${student.id}_${y}`);
+  }
+  keyboard.row().text('❌ Cancel', 'report_cancel');
+
+  const text = `
+📊 <b>Student Monthly Audit Report</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+🆔 <b>Roll ID:</b> <code>${student.id}</code>
+🪑 <b>Desk:</b> ${student.seat_number || 'Unassigned'} (${student.shift || 'Full Day'})
+
+<b>Step 1 of 2:</b> Select Year:
+`;
+
+  if (edit && ctx.callbackQuery) {
+    await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: keyboard });
+  } else {
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
+  }
+}
+
+bot.command(['report', 'monthlyreport'], async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
+  const input = ctx.match?.trim();
+
+  if (!input) {
+    adminFlowState.set(ctx.chat.id, { action: 'awaiting_report_query' });
+    return ctx.reply(`
+📊 <b>Student Monthly Audit Report</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Please send the student's <b>Full Name</b>, <b>Phone Number</b>, or <b>Roll ID</b>:
+<i>Example: Sarwar Altaf Dar</i>
+`, {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().text('❌ Cancel', 'report_cancel'),
+    });
+  }
+
+  await handleReportStudentSearch(ctx, input);
+});
+
+bot.callbackQuery('menu_monthly_report', async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
+  await ctx.answerCallbackQuery();
+  adminFlowState.set(ctx.chat.id, { action: 'awaiting_report_query' });
+  await ctx.reply(`
+📊 <b>Student Monthly Audit Report</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Please send the student's <b>Full Name</b>, <b>Phone Number</b>, or <b>Roll ID</b>:
+<i>Example: Sarwar Altaf Dar</i>
+`, {
+    parse_mode: 'HTML',
+    reply_markup: new InlineKeyboard().text('❌ Cancel', 'report_cancel'),
+  });
+});
+
+bot.callbackQuery(/^rpt_stu_(.+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
+  await ctx.answerCallbackQuery();
+  const studentId = ctx.match[1];
+  const student = await db.getStudentById(studentId);
+  if (!student) return ctx.reply('❌ Student not found.');
+  await showReportYearSelection(ctx, student, true);
+});
+
+bot.callbackQuery(/^rpt_yr_([^_]+)_(\d+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
+  await ctx.answerCallbackQuery();
+  const studentId = ctx.match[1];
+  const year = parseInt(ctx.match[2], 10);
+  const student = await db.getStudentById(studentId);
+  if (!student) return ctx.reply('❌ Student not found.');
+
+  const months = [
+    { num: 1, name: 'Jan' }, { num: 2, name: 'Feb' }, { num: 3, name: 'Mar' },
+    { num: 4, name: 'Apr' }, { num: 5, name: 'May' }, { num: 6, name: 'Jun' },
+    { num: 7, name: 'Jul' }, { num: 8, name: 'Aug' }, { num: 9, name: 'Sep' },
+    { num: 10, name: 'Oct' }, { num: 11, name: 'Nov' }, { num: 12, name: 'Dec' },
+  ];
+
+  const keyboard = new InlineKeyboard();
+  for (let i = 0; i < months.length; i++) {
+    keyboard.text(months[i].name, `rpt_gen_${student.id}_${year}_${months[i].num}`);
+    if ((i + 1) % 3 === 0) keyboard.row();
+  }
+  keyboard.text('🔙 Back to Years', `rpt_stu_${student.id}`).text('❌ Cancel', 'report_cancel');
+
+  const text = `
+📊 <b>Student Monthly Audit Report</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+📅 <b>Year:</b> <b>${year}</b>
+
+<b>Step 2 of 2:</b> Select Month:
+`;
+
+  await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: keyboard });
+});
+
+bot.callbackQuery(/^rpt_gen_([^_]+)_(\d+)_(\d+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
+  await ctx.answerCallbackQuery({ text: 'Compiling report & generating PDF...' });
+  const studentId = ctx.match[1];
+  const year = parseInt(ctx.match[2], 10);
+  const month = parseInt(ctx.match[3], 10);
+
+  const student = await db.getStudentById(studentId);
+  if (!student) return ctx.reply('❌ Student not found.');
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const monthName = monthNames[month - 1];
+
+  await safeEdit(ctx, `
+⏳ <b>Generating Official Audit Report...</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+📅 <b>Period:</b> ${monthName} ${year}
+
+Compiling second-by-second punch logs, breaks, and peer benchmark rankings...
+`, { parse_mode: 'HTML' });
+
+  try {
+    const reportData = await getMonthlyReportData(studentId, year, month);
+    const pdfBuffer = await buildMonthlyReportPdf(reportData);
+
+    const cleanName = reportData.student.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `Monthly_Report_${cleanName}_${reportData.period.monthName}_${reportData.period.year}.pdf`;
+
+    const caption = `<b>${reportData.student.name}</b> (ID: <code>${reportData.student.id}</code>) • <b>${reportData.period.monthName} ${reportData.period.year}</b>\n📅 <i>Monthly Attendance & Study Audit Report</i>`;
+
+    // 1. Deliver PDF document directly to Admin
+    await bot.api.sendDocument(ctx.chat.id, new InputFile(pdfBuffer, filename), {
+      caption,
+      parse_mode: 'HTML',
+    });
+
+    // 2. Archive to Private Telegram Channel if configured
+    let channelArchived = false;
+    const targetChannelId = process.env.TELEGRAM_REPORT_CHANNEL_ID;
+    if (targetChannelId && targetChannelId !== String(ctx.chat.id)) {
+      try {
+        await sendMonthlyReportToTelegram(bot, pdfBuffer, reportData, targetChannelId);
+        channelArchived = true;
+      } catch (tgErr) {
+        console.warn('Channel archive warning:', tgErr.message);
+      }
+    }
+
+    await ctx.reply(`
+✅ <b>Audit Report Delivered!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+⏱ <b>Total Net Study:</b> ${reportData.metrics.totalNetFormatted}
+🏆 <b>Benchmark:</b> ${reportData.benchmark.tierBadge}
+${channelArchived ? '🔒 <b>Archived:</b> Saved to Private Telegram Archive Channel.' : ''}
+`, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error('Report generation error:', err);
+    await ctx.reply(`❌ Failed to generate report: ${err.message}`);
+  }
+});
+
+bot.callbackQuery('report_cancel', async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Report generation cancelled' });
+  adminFlowState.delete(ctx.chat.id);
+  await safeEdit(ctx, '❌ <i>Report request cancelled.</i>', { parse_mode: 'HTML' });
+});
+
+bot.callbackQuery('report_search_again', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  adminFlowState.set(ctx.chat.id, { action: 'awaiting_report_query' });
+  await safeEdit(ctx, '🔍 Please send the student name or ID to search:', {
+    parse_mode: 'HTML',
+    reply_markup: new InlineKeyboard().text('❌ Cancel', 'report_cancel'),
+  });
 });
 
 // ==============================================================================

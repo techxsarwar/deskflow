@@ -440,22 +440,28 @@ function buildMonthlyReportPdf(data) {
 
     // Student Info beside photo
     const infoX = 36 + photoSize + 12;
-    doc.fillColor(slate900).fontSize(15).font('Helvetica-Bold').text(data.student.name, infoX, profileY + 2);
+    const maxInfoWidth = contentWidth - photoSize - 150; // Keep clear of right month badge
+
+    doc.fillColor(slate900).fontSize(14).font('Helvetica-Bold')
+      .text(data.student.name, infoX, profileY + 2, { width: maxInfoWidth, lineBreak: false, ellipsis: true });
 
     const subInfo = `Desk: ${data.student.seatNumber || 'Unassigned'}  •  Shift: ${data.student.shift}  •  Roll: ${data.student.id}  •  +91 ${data.student.phone}`;
-    doc.fillColor(slate500).fontSize(7.5).font('Helvetica').text(subInfo, infoX, profileY + 22);
+    doc.fillColor(slate500).fontSize(7.5).font('Helvetica')
+      .text(subInfo, infoX, profileY + 20, { width: maxInfoWidth, lineBreak: false, ellipsis: true });
 
-    const planInfo = `Plan: ${data.student.membershipPlan}  •  Payment Status: ${String(data.student.paymentStatus).toUpperCase()} (Due: ₹${data.student.amountDue})`;
-    doc.fillColor(slate400).fontSize(7).font('Helvetica').text(planInfo, infoX, profileY + 34);
+    const feeText = data.student.amountDue > 0 ? `Due: ₹${data.student.amountDue}` : 'Paid in Full';
+    const planInfo = `Membership: ${data.student.membershipPlan}  •  Status: ${String(data.student.paymentStatus).toUpperCase()}  •  Fees: ${feeText}`;
+    doc.fillColor(slate400).fontSize(7).font('Helvetica')
+      .text(planInfo, infoX, profileY + 32, { width: maxInfoWidth, lineBreak: false, ellipsis: true });
 
     // Month Badge (Right Aligned)
     doc.fillColor(slate900).fontSize(14).font('Helvetica-Bold')
       .text(`${data.period.monthName.toUpperCase()} ${data.period.year}`, 36, profileY + 2, { align: 'right', width: contentWidth });
     doc.fillColor(slate400).fontSize(7.5).font('Helvetica')
-      .text(`AUDIT ID: ${data.period.reportId}`, 36, profileY + 22, { align: 'right', width: contentWidth });
+      .text(`AUDIT ID: ${data.period.reportId}`, 36, profileY + 20, { align: 'right', width: contentWidth });
 
     // Hairline below profile
-    const underProfileY = profileY + photoSize + 10;
+    const underProfileY = profileY + photoSize + 8;
     doc.moveTo(36, underProfileY).lineTo(36 + contentWidth, underProfileY).lineWidth(0.5).stroke(slate200);
 
     // --- Bonus Feature: Peer Benchmark Spotlight Card ---
@@ -514,12 +520,12 @@ function buildMonthlyReportPdf(data) {
 
     // Table Columns Configuration (Exact sum = 523.28 pt)
     const cols = {
-      num: { x: 36, w: 20, title: '#' },
-      date: { x: 56, w: 76, title: 'DATE & DAY' },
-      in: { x: 132, w: 64, title: 'ENTRY (IN)' },
-      breaks: { x: 196, w: 140, title: 'BREAKS WINDOW (TIME & MINS)' },
-      out: { x: 336, w: 64, title: 'EXIT (OUT)' },
-      breakDur: { x: 400, w: 52, title: 'TOTAL BREAK' },
+      num: { x: 36, w: 22, title: '#' },
+      date: { x: 58, w: 72, title: 'DATE & DAY' },
+      in: { x: 130, w: 66, title: 'ENTRY (IN)' },
+      breaks: { x: 196, w: 136, title: 'BREAKS WINDOW' },
+      out: { x: 332, w: 66, title: 'EXIT (OUT)' },
+      breakDur: { x: 398, w: 54, title: 'TOTAL BREAK' },
       netDur: { x: 452, w: 71, title: 'TOTAL STUDIED' },
     };
 
@@ -577,20 +583,20 @@ function buildMonthlyReportPdf(data) {
 
         // Breaks Window (e.g. 03:00 PM – 03:30 PM (30m))
         doc.fillColor(slate500).fontSize(6).font('Helvetica')
-          .text(String(row.breaksWindowText || 'None'), cols.breaks.x + 2, currentY, { width: cols.breaks.w - 4, lineBreak: false });
+          .text(String(row.breaksWindowText || 'None'), cols.breaks.x + 2, currentY, { width: cols.breaks.w - 4, lineBreak: false, ellipsis: true });
 
         // Check-out
         const outCol = row.status === 'checked_in' ? '#d97706' : slate900;
         doc.fillColor(outCol).fontSize(6.5).font('Helvetica')
-          .text(String(row.checkOutTime), cols.out.x + 2, currentY);
+          .text(String(row.checkOutTime), cols.out.x + 2, currentY, { width: cols.out.w - 4, lineBreak: false, ellipsis: true });
 
         // Total Break
         doc.fillColor(slate500).fontSize(6.5).font('Helvetica')
-          .text(String(row.breakDurationFormatted || '0h 00m 00s'), cols.breakDur.x + 2, currentY);
+          .text(String(row.breakDurationFormatted || '0h 00m 0s'), cols.breakDur.x + 2, currentY, { width: cols.breakDur.w - 4, lineBreak: false, ellipsis: true });
 
         // Total Studied (Net)
         doc.fillColor(slate900).fontSize(6.5).font('Helvetica-Bold')
-          .text(String(row.netDurationFormatted || '0h 00m 00s'), cols.netDur.x, currentY, { align: 'right', width: cols.netDur.w - 4 });
+          .text(String(row.netDurationFormatted || '0h 00m 0s'), cols.netDur.x, currentY, { align: 'right', width: cols.netDur.w - 4 });
 
         doc.y += rowHeight;
       });
@@ -607,13 +613,13 @@ function buildMonthlyReportPdf(data) {
     doc.roundedRect(36, signY, contentWidth, 48, 4).fillAndStroke(slate50, slate200);
 
     doc.fillColor(slate900).fontSize(7.5).font('Helvetica-Bold')
-      .text('ACADEMIC AUDIT CERTIFICATE & REPUTATION SEAL', 46, signY + 8);
+      .text('OFFICIAL ACADEMIC AUDIT CERTIFICATE', 46, signY + 10);
     doc.fillColor(slate500).fontSize(6.5).font('Helvetica')
       .text(
-        `This document certifies second-by-second study & attendance telemetry recorded at Vertical Classes Library & Study Lounge. ` +
-        `Ref: ${data.period.reportId} • Verification Hash: ${Buffer.from(data.period.reportId + data.metrics.totalNetSeconds).toString('base64').slice(0, 16)}`,
+        `This document certifies second-by-second study & attendance records maintained at Vertical Classes Study Lounge. ` +
+        `Audit Reference: ${data.period.reportId} • Verified by DeskFlow System.`,
         46,
-        signY + 20,
+        signY + 22,
         { width: contentWidth - 140 }
       );
 
