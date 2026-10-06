@@ -85,6 +85,15 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
 
   const monthName = new Date(year, month - 1, 1).toLocaleString('en-IN', { month: 'long' });
 
+  // 0. Auto-resolve any unclosed sessions from past dates where student forgot to check out
+  try {
+    if (db && typeof db.autoCloseStaleAttendanceSessions === 'function') {
+      await db.autoCloseStaleAttendanceSessions(student.id);
+    }
+  } catch (acErr) {
+    console.warn('[Auto-Close Warning]:', acErr.message);
+  }
+
   // 1. Fetch attendance logs for this student in this month
   const { data: rawLogs, error: logErr } = await supabase
     .from('attendance_logs')
@@ -152,6 +161,8 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
   let verifiedGpsCount = 0;
   const attendedDatesSet = new Set();
 
+  const todayStr = getISTDateString();
+
   const sessionDetails = logs.map((log, index) => {
     const inTime = log.check_in_time ? new Date(log.check_in_time) : null;
     const outTime = log.check_out_time ? new Date(log.check_out_time) : null;
@@ -161,6 +172,15 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
       grossSec = Math.round((outTime.getTime() - inTime.getTime()) / 1000);
     } else if (log.duration_minutes) {
       grossSec = log.duration_minutes * 60;
+    } else if (inTime && log.status === 'checked_in') {
+      if (log.date === todayStr) {
+        // Genuinely active study session today
+        const elapsed = Math.round((now.getTime() - inTime.getTime()) / 1000);
+        grossSec = Math.max(0, Math.min(elapsed, 12 * 3600));
+      } else {
+        // Stale unclosed session from past date: credit standard 8 hours
+        grossSec = 8 * 3600;
+      }
     }
 
     // Breaks for this date
@@ -208,13 +228,30 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
       geofenceStatus = 'Verified (Desk)';
     }
 
+    // Check-out display & status resolution
+    let checkOutDisplay = '—';
+    let sessionStatus = log.status || 'checked_out';
+
+    if (log.status === 'checked_in' && !log.check_out_time) {
+      if (log.date === todayStr && (now - inTime) < 14 * 3600 * 1000) {
+        checkOutDisplay = '🟢 Studying Now';
+      } else {
+        sessionStatus = 'auto_checked_out';
+        const estOut = inTime ? new Date(inTime.getTime() + 8 * 3600 * 1000) : now;
+        checkOutDisplay = `${formatShortISTTime(estOut)} (Auto)`;
+      }
+    } else if (log.check_out_time) {
+      const isAuto = log.status === 'auto_checked_out' || log.notes?.includes('Auto-closed');
+      checkOutDisplay = isAuto ? `${formatShortISTTime(log.check_out_time)} (Auto)` : formatExactISTTime(log.check_out_time);
+    }
+
     return {
       index: index + 1,
       id: log.id,
       date: log.date,
       dateFormatted: formatExactISTDate(log.date),
       checkInTime: formatExactISTTime(log.check_in_time),
-      checkOutTime: log.status === 'checked_in' ? 'Still Active' : formatExactISTTime(log.check_out_time),
+      checkOutTime: checkOutDisplay,
       breaksWindowText: breakWindowsList.length > 0 ? breakWindowsList.join(', ') : 'None',
       breaksCount: dayBreaks.length,
       breakDurationFormatted: formatSecondsToHMS(dayBreakSec),
@@ -222,7 +259,7 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
       netDurationFormatted: formatSecondsToHMS(netSec),
       rawNetSeconds: netSec,
       rawGrossSeconds: grossSec,
-      status: log.status,
+      status: sessionStatus,
       geofenceStatus,
       distanceMeters: dist,
     };
@@ -586,7 +623,9 @@ function buildMonthlyReportPdf(data) {
           .text(String(row.breaksWindowText || 'None'), cols.breaks.x + 2, currentY, { width: cols.breaks.w - 4, lineBreak: false, ellipsis: true });
 
         // Check-out
-        const outCol = row.status === 'checked_in' ? '#d97706' : slate900;
+        let outCol = slate900;
+        if (row.status === 'checked_in') outCol = emerald;
+        else if (row.status === 'auto_checked_out' || String(row.checkOutTime).includes('(Auto)')) outCol = '#d97706';
         doc.fillColor(outCol).fontSize(6.5).font('Helvetica')
           .text(String(row.checkOutTime), cols.out.x + 2, currentY, { width: cols.out.w - 4, lineBreak: false, ellipsis: true });
 

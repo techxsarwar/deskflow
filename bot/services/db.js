@@ -744,9 +744,77 @@ async function getLibraryPresenceSummary() {
   };
 }
 
+/**
+ * Auto-close any unclosed attendance logs from previous dates or exceeding 14 hours
+ * Caps credited study time based on student shift (default 8h, morning/afternoon 6h, evening 5h)
+ */
+async function autoCloseStaleAttendanceSessions(studentIdFilter = null) {
+  const todayStr = getISTDateString();
+  const now = new Date();
+
+  let query = supabase
+    .from('attendance_logs')
+    .select('id, student_id, student_name, seat_number, date, check_in_time, check_out_time, status')
+    .or('status.eq.checked_in,check_out_time.is.null');
+
+  if (studentIdFilter) {
+    query = query.eq('student_id', studentIdFilter);
+  }
+
+  const { data: staleLogs, error } = await query;
+  if (error || !staleLogs || staleLogs.length === 0) return [];
+
+  const closed = [];
+  for (const log of staleLogs) {
+    if (!log.check_in_time) continue;
+    const inTime = new Date(log.check_in_time);
+    const elapsedMs = now.getTime() - inTime.getTime();
+
+    const isPastDate = log.date && log.date < todayStr;
+    const isExcessiveHours = elapsedMs >= 14 * 3600 * 1000;
+
+    if (!isPastDate && !isExcessiveHours) continue;
+
+    let capHours = 8;
+    try {
+      const student = await getStudentById(log.student_id);
+      const shift = String(student?.shift || '').toLowerCase();
+      if (shift === 'morning' || shift === 'afternoon') capHours = 6;
+      else if (shift === 'evening') capHours = 5;
+      else if (shift === 'night') capHours = 8;
+      else if (shift === 'fullday') capHours = 8;
+    } catch (_) {}
+
+    const autoOutTime = new Date(inTime.getTime() + capHours * 3600 * 1000);
+    const diffMinutes = Math.max(1, Math.round((autoOutTime.getTime() - inTime.getTime()) / 60000));
+
+    const { data: updated } = await supabase
+      .from('attendance_logs')
+      .update({
+        check_out_time: autoOutTime.toISOString(),
+        duration_minutes: diffMinutes,
+        status: 'checked_out',
+      })
+      .eq('id', log.id)
+      .select()
+      .maybeSingle();
+
+    if (updated) closed.push(updated);
+  }
+
+  if (closed.length > 0) {
+    console.log(`[Auto-Close Attendance] Successfully auto-closed ${closed.length} stale session(s).`);
+  }
+
+  return closed;
+}
+
 async function checkInStudent(studentId, geoData = {}) {
   const student = await getStudentById(studentId);
   if (!student) throw new Error('Student not found');
+
+  // Auto-close any unclosed sessions from previous days for this student
+  await autoCloseStaleAttendanceSessions(student.id);
 
   const todayStr = getISTDateString();
 
@@ -1010,4 +1078,5 @@ module.exports = {
   checkAndAutoResetExpiredBreaks,
   getStudentPresenceStatus,
   getLibraryPresenceSummary,
+  autoCloseStaleAttendanceSessions,
 };

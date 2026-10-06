@@ -3896,9 +3896,10 @@ server.on('error', (e) => {
   }
 });
 
-// Background Service: Auto-reset expired student breaks (+5m grace period)
+// Background Service: Auto-reset expired student breaks (+5m grace period) & auto-close forgotten checkouts
 setInterval(async () => {
   try {
+    // 1. Auto-reset student breaks that exceeded grace period
     const expiredBreaks = await db.checkAndAutoResetExpiredBreaks();
     for (const brk of expiredBreaks) {
       console.log(`[Auto-Reset Break] Student ${brk.student_name} (${brk.seat_number}) break ended after grace period.`);
@@ -3917,8 +3918,11 @@ Welcome back to your studies! 📚✨
         } catch (e) {}
       }
     }
+
+    // 2. Auto-close stale attendance sessions from previous dates or exceeding 14 hours
+    await db.autoCloseStaleAttendanceSessions();
   } catch (err) {
-    console.error('Auto-reset breaks error:', err.message);
+    console.error('Background maintenance error:', err.message);
   }
 }, 30000);
 
