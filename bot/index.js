@@ -25,6 +25,7 @@ const {
   getMonthlyReportData,
   buildMonthlyReportPdf,
   sendMonthlyReportToTelegram,
+  getStudentAvailableReportPeriods,
 } = require('./services/monthly_report');
 
 // Configuration
@@ -3320,29 +3321,89 @@ Found <b>${students.length}</b> student(s) matching "<i>${query}</i>". Please se
 }
 
 async function showReportYearSelection(ctx, student, edit = false) {
-  const currentYear = new Date().getFullYear();
-  const years = [currentYear - 1, currentYear, currentYear + 1];
+  try {
+    const periods = await getStudentAvailableReportPeriods(student.id);
+    const years = [...new Set(periods.map((p) => p.year))].sort((a, b) => b - a);
 
-  const keyboard = new InlineKeyboard();
-  for (const y of years) {
-    keyboard.text(`📅 ${y}`, `rpt_yr_${student.id}_${y}`);
-  }
-  keyboard.row().text('❌ Cancel', 'report_cancel');
+    // If student only has records in a single year, jump straight to month selection
+    if (years.length === 1) {
+      return await showReportMonthSelection(ctx, student, years[0], periods, edit, false);
+    }
 
-  const text = `
+    // If multiple years, let admin select which active year to view
+    const keyboard = new InlineKeyboard();
+    for (const y of years) {
+      const count = periods.filter((p) => p.year === y).length;
+      keyboard.text(`📅 ${y} (${count} active month${count > 1 ? 's' : ''})`, `rpt_yr_${student.id}_${y}`).row();
+    }
+    keyboard.text('❌ Cancel', 'report_cancel');
+
+    const text = `
 📊 <b>Student Monthly Audit Report</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👤 <b>Student:</b> ${student.full_name}
 🆔 <b>Roll ID:</b> <code>${student.id}</code>
 🪑 <b>Desk:</b> ${student.seat_number || 'Unassigned'} (${student.shift || 'Full Day'})
 
-<b>Step 1 of 2:</b> Select Year:
+<b>Step 1 of 2:</b> Select Year (${years.length} active year${years.length > 1 ? 's' : ''} on record):
 `;
 
-  if (edit && ctx.callbackQuery) {
-    await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: keyboard });
-  } else {
-    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
+    if (edit && ctx.callbackQuery) {
+      await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: keyboard });
+    } else {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error('showReportYearSelection error:', err);
+    await ctx.reply(`❌ Error loading student attendance periods: ${err.message}`);
+  }
+}
+
+async function showReportMonthSelection(ctx, student, year, allPeriods = null, edit = false, showBackButton = true) {
+  try {
+    const periods = allPeriods || await getStudentAvailableReportPeriods(student.id);
+    const months = periods.filter((p) => p.year === year);
+
+    if (months.length === 0) {
+      return ctx.reply(`❌ No attendance or enrollment records found for year ${year}.`, {
+        reply_markup: new InlineKeyboard().text('🔙 Pick Another Year', `rpt_stu_${student.id}`).text('❌ Cancel', 'report_cancel'),
+      });
+    }
+
+    const keyboard = new InlineKeyboard();
+    const singleCol = months.length <= 4;
+    for (let i = 0; i < months.length; i++) {
+      const m = months[i];
+      const sessionText = m.sessions > 0 ? ` (${m.sessions} session${m.sessions > 1 ? 's' : ''})` : '';
+      const label = singleCol ? `📅 ${m.fullMonthName}${sessionText}` : `${m.monthName}${sessionText}`;
+      keyboard.text(label, `rpt_gen_${student.id}_${year}_${m.month}`);
+      if (singleCol || (i + 1) % 2 === 0) keyboard.row();
+    }
+    if (!singleCol && months.length % 2 !== 0) keyboard.row();
+
+    if (showBackButton) {
+      keyboard.text('🔙 Back to Years', `rpt_stu_${student.id}`);
+    }
+    keyboard.text('❌ Cancel', 'report_cancel');
+
+    const text = `
+📊 <b>Student Monthly Audit Report</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+🆔 <b>Roll ID:</b> <code>${student.id}</code>
+📅 <b>Year:</b> <b>${year}</b>
+
+Select Available Month (${months.length} recorded):
+`;
+
+    if (edit && ctx.callbackQuery) {
+      await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: keyboard });
+    } else {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error('showReportMonthSelection error:', err);
+    await ctx.reply(`❌ Error loading months: ${err.message}`);
   }
 }
 
@@ -3397,31 +3458,7 @@ bot.callbackQuery(/^rpt_yr_([^_]+)_(\d+)$/, async (ctx) => {
   const year = parseInt(ctx.match[2], 10);
   const student = await db.getStudentById(studentId);
   if (!student) return ctx.reply('❌ Student not found.');
-
-  const months = [
-    { num: 1, name: 'Jan' }, { num: 2, name: 'Feb' }, { num: 3, name: 'Mar' },
-    { num: 4, name: 'Apr' }, { num: 5, name: 'May' }, { num: 6, name: 'Jun' },
-    { num: 7, name: 'Jul' }, { num: 8, name: 'Aug' }, { num: 9, name: 'Sep' },
-    { num: 10, name: 'Oct' }, { num: 11, name: 'Nov' }, { num: 12, name: 'Dec' },
-  ];
-
-  const keyboard = new InlineKeyboard();
-  for (let i = 0; i < months.length; i++) {
-    keyboard.text(months[i].name, `rpt_gen_${student.id}_${year}_${months[i].num}`);
-    if ((i + 1) % 3 === 0) keyboard.row();
-  }
-  keyboard.text('🔙 Back to Years', `rpt_stu_${student.id}`).text('❌ Cancel', 'report_cancel');
-
-  const text = `
-📊 <b>Student Monthly Audit Report</b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👤 <b>Student:</b> ${student.full_name}
-📅 <b>Year:</b> <b>${year}</b>
-
-<b>Step 2 of 2:</b> Select Month:
-`;
-
-  await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: keyboard });
+  await showReportMonthSelection(ctx, student, year, null, true, true);
 });
 
 bot.callbackQuery(/^rpt_gen_([^_]+)_(\d+)_(\d+)$/, async (ctx) => {
@@ -3761,6 +3798,20 @@ app.get('/api/reports/student-monthly', async (req, res) => {
     return res.send(pdfBuffer);
   } catch (e) {
     return res.status(500).send(e.message);
+  }
+});
+
+// Available periods for student (dynamic years and months based on attendance)
+app.get('/api/reports/available-periods', async (req, res) => {
+  const { studentId } = req.query;
+  if (!studentId) return res.status(400).json({ error: 'studentId is required' });
+
+  try {
+    const periods = await getStudentAvailableReportPeriods(studentId);
+    return res.json({ success: true, studentId, periods });
+  } catch (err) {
+    console.error('[Available Periods API Error]:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 

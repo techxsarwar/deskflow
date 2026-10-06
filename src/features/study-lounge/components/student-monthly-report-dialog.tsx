@@ -71,6 +71,39 @@ export function StudentMonthlyReportDialog({
   const [reportData, setReportData] = useState<any>(null)
   const [pdfBase64, setPdfBase64] = useState<string | null>(null)
   const [pdfFilename, setPdfFilename] = useState<string>('')
+  const [availablePeriods, setAvailablePeriods] = useState<Array<{
+    year: number
+    month: number
+    monthName: string
+    fullMonthName: string
+    sessions: number
+  }>>([])
+
+  // Fetch available periods when student changes
+  useEffect(() => {
+    if (!open || !student) {
+      setAvailablePeriods([])
+      return
+    }
+
+    let isMounted = true
+    studyLoungeApi.getAvailableReportPeriods(student.id)
+      .then((res) => {
+        if (isMounted && res.success && res.periods && res.periods.length > 0) {
+          setAvailablePeriods(res.periods)
+          const latest = res.periods[0]
+          setSelectedYear(String(latest.year))
+          setSelectedMonth(String(latest.month))
+        }
+      })
+      .catch((e) => {
+        console.warn('Could not load student periods:', e)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [open, student])
 
   // Fetch report data when opened or month/year changes
   useEffect(() => {
@@ -207,17 +240,18 @@ export function StudentMonthlyReportDialog({
         <div className='p-4 border-b bg-muted/30 flex flex-wrap items-center justify-between gap-3'>
           <div className='flex items-center gap-2'>
             <div className='flex items-center gap-1.5'>
-              <Label className='text-xs font-semibold text-muted-foreground whitespace-nowrap'>
-                Month:
-              </Label>
-              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                <SelectTrigger className='h-8 w-32 text-xs'>
+              <Label className='text-xs font-semibold text-muted-foreground'>Year:</Label>
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className='h-8 min-w-24 text-xs font-mono'>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {MONTHS.map((m) => (
-                    <SelectItem key={m.value} value={m.value} className='text-xs'>
-                      {m.label}
+                  {(availablePeriods.length > 0
+                    ? [...new Set(availablePeriods.map((p) => String(p.year)))]
+                    : [String(now.getFullYear() - 1), String(now.getFullYear()), String(now.getFullYear() + 1)]
+                  ).map((y) => (
+                    <SelectItem key={y} value={y} className='text-xs font-mono'>
+                      {y}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -225,15 +259,27 @@ export function StudentMonthlyReportDialog({
             </div>
 
             <div className='flex items-center gap-1.5'>
-              <Label className='text-xs font-semibold text-muted-foreground'>Year:</Label>
-              <Select value={selectedYear} onValueChange={setSelectedYear}>
-                <SelectTrigger className='h-8 w-24 text-xs font-mono'>
+              <Label className='text-xs font-semibold text-muted-foreground whitespace-nowrap'>
+                Month:
+              </Label>
+              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <SelectTrigger className='h-8 min-w-36 text-xs'>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value='2025' className='text-xs font-mono'>2025</SelectItem>
-                  <SelectItem value='2026' className='text-xs font-mono'>2026</SelectItem>
-                  <SelectItem value='2027' className='text-xs font-mono'>2027</SelectItem>
+                  {(availablePeriods.length > 0
+                    ? availablePeriods
+                        .filter((p) => String(p.year) === selectedYear)
+                        .map((p) => ({
+                          value: String(p.month),
+                          label: `${p.fullMonthName}${p.sessions > 0 ? ` (${p.sessions} sessions)` : ''}`,
+                        }))
+                    : MONTHS
+                  ).map((m) => (
+                    <SelectItem key={m.value} value={m.value} className='text-xs'>
+                      {m.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

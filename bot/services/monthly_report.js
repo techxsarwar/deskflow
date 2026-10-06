@@ -675,8 +675,99 @@ async function sendMonthlyReportToTelegram(bot, pdfBuffer, reportData, targetCha
   };
 }
 
+/**
+ * Discover all years and months where a student has attendance telemetry, breaks, transactions, or active tenure.
+ */
+async function getStudentAvailableReportPeriods(studentId) {
+  const { data: logs } = await supabase
+    .from('attendance_logs')
+    .select('date, check_in_time')
+    .eq('student_id', studentId);
+
+  const { data: breaks } = await supabase
+    .from('student_breaks')
+    .select('started_at')
+    .eq('student_id', studentId);
+
+  const { data: txns } = await supabase
+    .from('fee_transactions')
+    .select('payment_date')
+    .eq('student_id', studentId);
+
+  const { data: student } = await supabase
+    .from('students')
+    .select('start_date, end_date, created_at')
+    .eq('id', studentId)
+    .single();
+
+  const periodsMap = new Map();
+
+  const addPeriod = (year, month, countWeight = 0) => {
+    const y = parseInt(year, 10);
+    const m = parseInt(month, 10);
+    if (!y || !m || y < 2020 || y > 2035 || m < 1 || m > 12) return;
+    const key = `${y}-${String(m).padStart(2, '0')}`;
+    const cur = periodsMap.get(key) || { year: y, month: m, sessions: 0 };
+    cur.sessions += countWeight;
+    periodsMap.set(key, cur);
+  };
+
+  (logs || []).forEach((l) => {
+    const raw = l.date || l.check_in_time;
+    if (raw) {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) {
+        addPeriod(d.getFullYear(), d.getMonth() + 1, 1);
+      }
+    }
+  });
+
+  (breaks || []).forEach((b) => {
+    if (b.started_at) {
+      const d = new Date(b.started_at);
+      if (!isNaN(d.getTime())) {
+        addPeriod(d.getFullYear(), d.getMonth() + 1, 0);
+      }
+    }
+  });
+
+  (txns || []).forEach((t) => {
+    if (t.payment_date) {
+      const d = new Date(t.payment_date);
+      if (!isNaN(d.getTime())) {
+        addPeriod(d.getFullYear(), d.getMonth() + 1, 0);
+      }
+    }
+  });
+
+  // If no periods logged, include student enrollment month or current month
+  if (periodsMap.size === 0 && student) {
+    const refDate = student.start_date ? new Date(student.start_date) : new Date(student.created_at || Date.now());
+    const y = !isNaN(refDate.getTime()) ? refDate.getFullYear() : new Date().getFullYear();
+    const m = !isNaN(refDate.getTime()) ? refDate.getMonth() + 1 : new Date().getMonth() + 1;
+    addPeriod(y, m, 0);
+  }
+
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fullMonthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  const periods = Array.from(periodsMap.values()).map((p) => ({
+    year: p.year,
+    month: p.month,
+    monthName: monthNames[p.month - 1],
+    fullMonthName: fullMonthNames[p.month - 1],
+    sessions: p.sessions,
+  }));
+
+  // Sort newest first
+  periods.sort((a, b) => b.year - a.year || b.month - a.month);
+
+  return periods;
+}
+
 module.exports = {
   getMonthlyReportData,
   buildMonthlyReportPdf,
   sendMonthlyReportToTelegram,
+  getStudentAvailableReportPeriods,
 };

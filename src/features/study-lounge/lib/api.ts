@@ -137,4 +137,24 @@ export const studyLoungeApi = {
     const res = await api.post('/api/reports/student-monthly', params)
     return res.data
   },
+
+  getAvailableReportPeriods: async (
+    studentId: string
+  ): Promise<{
+    success: boolean
+    studentId: string
+    periods: Array<{
+      year: number
+      month: number
+      monthName: string
+      fullMonthName: string
+      sessions: number
+    }>
+  }> => {
+    const res = await api.get('/api/reports/available-periods', {
+      params: { studentId },
+    })
+    return res.data
+  },
 }
+
