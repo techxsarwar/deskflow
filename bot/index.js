@@ -2631,52 +2631,6 @@ Students physically within <b>${updated.radius_meters} meters</b> of the library
   }
 });
 
-// Admin Command: /monthlyreport or /report [name/phone/seat] (Admin Only)
-bot.command(['monthlyreport', 'report'], async (ctx) => {
-  if (!await ensureAdmin(ctx)) return;
-  const query = ctx.match?.trim();
-  if (!query) {
-    return ctx.reply(`
-📊 <b>Student Monthly Performance & Attendance PDF Report</b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Generate a comprehensive, second-by-second attendance & performance audit PDF and store it in your private archive channel.
-
-Usage: <code>/report [Student Name, Phone, or Seat]</code>
-
-<i>Examples:</i>
-• <code>/report Sarwar</code>
-• <code>/report 9876543210</code>
-• <code>/report D-04</code>
-`, { parse_mode: 'HTML' });
-  }
-
-  const waitMsg = await ctx.reply('⏳ <i>Compiling attendance telemetry records and generating audit PDF...</i>', { parse_mode: 'HTML' });
-  try {
-    const students = await db.searchStudents(query);
-    if (!students || students.length === 0) {
-      return ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `❌ No student found matching "<b>${query}</b>"`, { parse_mode: 'HTML' });
-    }
-    const student = students[0];
-    const now = new Date();
-    const reportData = await getMonthlyReportData(student.id, now.getFullYear(), now.getMonth() + 1);
-    const pdfBuffer = await buildMonthlyReportPdf(reportData);
-
-    const targetChannel = process.env.TELEGRAM_REPORT_CHANNEL_ID || ctx.chat.id;
-    await sendMonthlyReportToTelegram(bot, pdfBuffer, reportData, targetChannel);
-
-    if (String(targetChannel) !== String(ctx.chat.id)) {
-      await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `✅ <b>Monthly Audit PDF Report for ${student.full_name} has been compiled and stored in your private archive channel!</b>`, { parse_mode: 'HTML' });
-      // Also send a copy directly to the requesting admin
-      await sendMonthlyReportToTelegram(bot, pdfBuffer, reportData, ctx.chat.id);
-    } else {
-      await ctx.api.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
-    }
-  } catch (err) {
-    console.error('Report command error:', err);
-    await ctx.reply(`❌ Failed to generate monthly report: ${err.message}`);
-  }
-});
-
 // Admin Manual Force Check-In Command: /admincheckin [student_name_or_seat] (Admin Only)
 bot.command(['admincheckin', 'forcein'], async (ctx) => {
   if (!await ensureAdmin(ctx)) return;
