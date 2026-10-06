@@ -21,6 +21,11 @@ const {
   verifyAdminSessionToken,
 } = require('./services/otp');
 const { getISTTime, getISTDate, getISTDateString } = require('./services/time');
+const {
+  getMonthlyReportData,
+  buildMonthlyReportPdf,
+  sendMonthlyReportToTelegram,
+} = require('./services/monthly_report');
 
 // Configuration
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -2617,6 +2622,52 @@ Students physically within <b>${updated.radius_meters} meters</b> of the library
   }
 });
 
+// Admin Command: /monthlyreport or /report [name/phone/seat] (Admin Only)
+bot.command(['monthlyreport', 'report'], async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
+  const query = ctx.match?.trim();
+  if (!query) {
+    return ctx.reply(`
+📊 <b>Student Monthly Performance & Attendance PDF Report</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generate a comprehensive, second-by-second attendance & performance audit PDF and store it in your private archive channel.
+
+Usage: <code>/report [Student Name, Phone, or Seat]</code>
+
+<i>Examples:</i>
+• <code>/report Sarwar</code>
+• <code>/report 9876543210</code>
+• <code>/report D-04</code>
+`, { parse_mode: 'HTML' });
+  }
+
+  const waitMsg = await ctx.reply('⏳ <i>Compiling attendance telemetry records and generating audit PDF...</i>', { parse_mode: 'HTML' });
+  try {
+    const students = await db.searchStudents(query);
+    if (!students || students.length === 0) {
+      return ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `❌ No student found matching "<b>${query}</b>"`, { parse_mode: 'HTML' });
+    }
+    const student = students[0];
+    const now = new Date();
+    const reportData = await getMonthlyReportData(student.id, now.getFullYear(), now.getMonth() + 1);
+    const pdfBuffer = await buildMonthlyReportPdf(reportData);
+
+    const targetChannel = process.env.TELEGRAM_REPORT_CHANNEL_ID || ctx.chat.id;
+    await sendMonthlyReportToTelegram(bot, pdfBuffer, reportData, targetChannel);
+
+    if (String(targetChannel) !== String(ctx.chat.id)) {
+      await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, `✅ <b>Monthly Audit PDF Report for ${student.full_name} has been compiled and stored in your private archive channel!</b>`, { parse_mode: 'HTML' });
+      // Also send a copy directly to the requesting admin
+      await sendMonthlyReportToTelegram(bot, pdfBuffer, reportData, ctx.chat.id);
+    } else {
+      await ctx.api.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+    }
+  } catch (err) {
+    console.error('Report command error:', err);
+    await ctx.reply(`❌ Failed to generate monthly report: ${err.message}`);
+  }
+});
+
 // Admin Manual Force Check-In Command: /admincheckin [student_name_or_seat] (Admin Only)
 bot.command(['admincheckin', 'forcein'], async (ctx) => {
   if (!await ensureAdmin(ctx)) return;
@@ -3441,6 +3492,82 @@ app.post('/api/email/reminder', emailLimiter, async (req, res) => {
     return res.json(result);
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Student Monthly Study & Attendance Report (PDF Generator & Telegram Channel Dispatcher)
+app.post('/api/reports/student-monthly', async (req, res) => {
+  const authHeader = req.headers['x-admin-token'] || req.headers['authorization'];
+  const internalProxy = req.headers['x-internal-proxy'];
+  const token = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
+  const admin = verifyAdminSessionToken(token);
+
+  if (!admin && !internalProxy) {
+    return res.status(401).json({ error: 'Authentication required. Valid admin token missing or expired.' });
+  }
+
+  const { studentId, year, month, sendToTelegram = true, targetChatId } = req.body;
+  if (!studentId) {
+    return res.status(400).json({ error: 'studentId is required' });
+  }
+
+  try {
+    const reportData = await getMonthlyReportData(studentId, year, month);
+    const pdfBuffer = await buildMonthlyReportPdf(reportData);
+
+    let telegramResult = null;
+    if (sendToTelegram) {
+      const destinationId = targetChatId || process.env.TELEGRAM_REPORT_CHANNEL_ID || ADMIN_CHAT_ID;
+      if (destinationId) {
+        try {
+          telegramResult = await sendMonthlyReportToTelegram(bot, pdfBuffer, reportData, destinationId);
+        } catch (tgErr) {
+          console.error('[Monthly Report] Telegram upload error:', tgErr.message);
+          telegramResult = { success: false, error: tgErr.message };
+        }
+      }
+    }
+
+    if (req.query.download === '1' || req.query.download === 'true') {
+      const filename = `Report_${reportData.student.name.replace(/[^a-zA-Z0-9]/g, '_')}_${reportData.period.monthName}_${reportData.period.year}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(pdfBuffer);
+    }
+
+    return res.json({
+      success: true,
+      reportData,
+      telegramSent: Boolean(telegramResult && telegramResult.success),
+      telegramResult,
+      pdfBase64: pdfBuffer.toString('base64'),
+      filename: `Report_${reportData.student.name.replace(/[^a-zA-Z0-9]/g, '_')}_${reportData.period.monthName}_${reportData.period.year}.pdf`,
+    });
+  } catch (err) {
+    console.error('[Monthly Report Error]:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET convenience endpoint for direct browser PDF preview or download
+app.get('/api/reports/student-monthly', async (req, res) => {
+  const { studentId, year, month, token } = req.query;
+  if (!studentId) return res.status(400).send('studentId is required');
+
+  const adminToken = token || req.headers['x-admin-token'] || (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+  if (!verifyAdminSessionToken(adminToken)) {
+    return res.status(401).send('Unauthorized: Valid admin token required');
+  }
+
+  try {
+    const reportData = await getMonthlyReportData(studentId, year, month);
+    const pdfBuffer = await buildMonthlyReportPdf(reportData);
+    const filename = `Report_${reportData.student.name.replace(/[^a-zA-Z0-9]/g, '_')}_${reportData.period.monthName}_${reportData.period.year}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    return res.send(pdfBuffer);
+  } catch (e) {
+    return res.status(500).send(e.message);
   }
 });
 

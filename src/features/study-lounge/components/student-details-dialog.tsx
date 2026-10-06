@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Lock,
   RefreshCw,
+  FileText,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -32,6 +33,7 @@ interface StudentDetailsDialogProps {
   onApprove?: (student: Student) => void
   onRenew?: (student: Student) => void
   onReleaseSeat?: (student: Student) => void
+  onOpenMonthlyReport?: (student: Student) => void
 }
 
 export function StudentDetailsDialog({
@@ -42,6 +44,7 @@ export function StudentDetailsDialog({
   onApprove,
   onRenew,
   onReleaseSeat,
+  onOpenMonthlyReport,
 }: StudentDetailsDialogProps) {
   if (!student) return null
 
@@ -214,6 +217,22 @@ export function StudentDetailsDialog({
               <Phone className='h-3.5 w-3.5 text-emerald-600' />
               Message on WhatsApp
             </Button>
+
+            {onOpenMonthlyReport && (
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                className='gap-1.5 border-primary/30 text-primary hover:bg-primary/10'
+                onClick={() => {
+                  onOpenChange(false)
+                  onOpenMonthlyReport(student)
+                }}
+              >
+                <FileText className='h-3.5 w-3.5' />
+                Monthly Audit PDF
+              </Button>
+            )}
 
             <div className='flex flex-wrap items-center gap-2'>
               {onRenew && (

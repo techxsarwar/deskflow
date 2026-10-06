@@ -118,4 +118,23 @@ export const studyLoungeApi = {
   assignSeat: async (studentId: string, seatNumber: string): Promise<void> => {
     await api.post('/api/seats/assign', { studentId, seatNumber })
   },
+
+  // Monthly Student Activity Report (PDF & Telegram Channel Storage)
+  generateMonthlyReport: async (params: {
+    studentId: string
+    year?: number
+    month?: number
+    sendToTelegram?: boolean
+    targetChatId?: string
+  }): Promise<{
+    success: boolean
+    reportData: any
+    telegramSent: boolean
+    telegramResult?: any
+    pdfBase64?: string
+    filename?: string
+  }> => {
+    const res = await api.post('/api/reports/student-monthly', params)
+    return res.data
+  },
 }

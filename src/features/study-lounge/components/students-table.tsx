@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   RefreshCw,
   XCircle,
+  FileText,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -45,6 +46,7 @@ import { CollectFeeDialog } from './collect-fee-dialog'
 import { FeeReceiptDialog } from './fee-receipt-dialog'
 import { ShareLinkDialog } from './share-link-dialog'
 import { RenewMembershipDialog } from './renew-membership-dialog'
+import { StudentMonthlyReportDialog } from './student-monthly-report-dialog'
 
 export function StudentsTable() {
   const students = useStudyLoungeStore((s) => s.students)
@@ -71,6 +73,7 @@ export function StudentsTable() {
   const [receiptTxn, setReceiptTxn] = useState<FeeTransaction | null>(null)
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [receiptDefaultTab, setReceiptDefaultTab] = useState<'receipt' | 'whatsapp'>('receipt')
+  const [monthlyReportOpen, setMonthlyReportOpen] = useState(false)
 
   // Filtered students
   const filteredStudents = useMemo(() => {
@@ -546,6 +549,16 @@ export function StudentsTable() {
 
                             <DropdownMenuItem
                               onClick={() => {
+                                setSelectedStudent(student)
+                                setMonthlyReportOpen(true)
+                              }}
+                              className='text-primary font-medium'
+                            >
+                              <FileText className='mr-2 h-4 w-4 text-primary' /> Monthly Audit PDF
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem
+                              onClick={() => {
                                 setRenewStudent(student)
                                 setRenewOpen(true)
                               }}
@@ -629,6 +642,10 @@ export function StudentsTable() {
           setRenewOpen(true)
         }}
         onReleaseSeat={(s) => handleReleaseSeat(s)}
+        onOpenMonthlyReport={(s) => {
+          setSelectedStudent(s)
+          setMonthlyReportOpen(true)
+        }}
       />
 
       <RenewMembershipDialog
@@ -664,6 +681,12 @@ export function StudentsTable() {
       <ShareLinkDialog
         open={shareLinkOpen}
         onOpenChange={setShareLinkOpen}
+      />
+
+      <StudentMonthlyReportDialog
+        student={selectedStudent}
+        open={monthlyReportOpen}
+        onOpenChange={setMonthlyReportOpen}
       />
     </div>
   )
