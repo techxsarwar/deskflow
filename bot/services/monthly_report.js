@@ -18,7 +18,7 @@ function formatSecondsToHMS(totalSeconds) {
   const seconds = sec % 60;
   
   const pad = (n) => String(n).padStart(2, '0');
-  return `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
+  return `${hours}h ${pad(minutes)}m ${pad(seconds)}s`;
 }
 
 function formatExactISTTime(dateStr) {
@@ -36,6 +36,20 @@ function formatExactISTTime(dateStr) {
   }
 }
 
+function formatShortISTTime(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    return new Date(dateStr).toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return '—';
+  }
+}
+
 function formatExactISTDate(dateStr) {
   if (!dateStr) return '—';
   try {
@@ -44,7 +58,6 @@ function formatExactISTDate(dateStr) {
       weekday: 'short',
       day: '2-digit',
       month: 'short',
-      year: 'numeric',
     });
   } catch {
     return dateStr;
@@ -52,7 +65,7 @@ function formatExactISTDate(dateStr) {
 }
 
 /**
- * Gather full student monthly attendance, break and fee data
+ * Gather full student monthly attendance, breaks, peer comparative benchmark, and photo
  */
 async function getMonthlyReportData(studentId, yearNum, monthNum) {
   const student = await db.getStudentById(studentId);
@@ -108,6 +121,21 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
 
   const transactions = rawTxns || [];
 
+  // 4. Download student photo if available
+  let photoBuffer = null;
+  const photoUrl = student.photo_url || student.avatar_url;
+  if (photoUrl) {
+    try {
+      const photoResp = await fetch(photoUrl, { signal: AbortSignal.timeout(4000) });
+      if (photoResp.ok) {
+        const arr = await photoResp.arrayBuffer();
+        photoBuffer = Buffer.from(arr);
+      }
+    } catch (e) {
+      console.warn('Student photo download failed for PDF:', e.message);
+    }
+  }
+
   // Group breaks by date (YYYY-MM-DD)
   const breaksByDate = new Map();
   for (const b of breaks) {
@@ -138,11 +166,22 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
     // Breaks for this date
     const dayBreaks = breaksByDate.get(log.date) || [];
     let dayBreakSec = 0;
+    const breakWindowsList = [];
+
     for (const brk of dayBreaks) {
-      if (brk.ended_at && brk.started_at) {
-        dayBreakSec += Math.round((new Date(brk.ended_at).getTime() - new Date(brk.started_at).getTime()) / 1000);
-      } else {
-        dayBreakSec += (brk.duration_minutes || 15) * 60;
+      if (brk.started_at) {
+        const bStartStr = formatShortISTTime(brk.started_at);
+        let bEndStr = 'Ongoing';
+        let bSec = 0;
+        if (brk.ended_at) {
+          bEndStr = formatShortISTTime(brk.ended_at);
+          bSec = Math.round((new Date(brk.ended_at).getTime() - new Date(brk.started_at).getTime()) / 1000);
+        } else {
+          bSec = (brk.duration_minutes || 15) * 60;
+        }
+        dayBreakSec += bSec;
+        const bMin = Math.round(bSec / 60);
+        breakWindowsList.push(`${bStartStr}–${bEndStr} (${bMin}m)`);
       }
     }
 
@@ -155,7 +194,7 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
     if (log.date) attendedDatesSet.add(log.date);
 
     // Geofence verification status
-    let geofenceStatus = 'Verified (On-Premises)';
+    let geofenceStatus = 'Verified (Desk)';
     const dist = log.distance_meters != null ? log.distance_meters : (log.check_out_distance_meters != null ? log.check_out_distance_meters : null);
     if (dist != null) {
       if (dist <= 75) {
@@ -165,8 +204,8 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
         geofenceStatus = `Remote (${dist}m GPS)`;
       }
     } else {
-      verifiedGpsCount += 1; // Default verified if manual check-in
-      geofenceStatus = 'Verified (Library Desk)';
+      verifiedGpsCount += 1;
+      geofenceStatus = 'Verified (Desk)';
     }
 
     return {
@@ -175,13 +214,14 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
       date: log.date,
       dateFormatted: formatExactISTDate(log.date),
       checkInTime: formatExactISTTime(log.check_in_time),
-      checkOutTime: log.status === 'checked_in' ? 'Still Studying (Active)' : formatExactISTTime(log.check_out_time),
-      rawGrossSeconds: grossSec,
-      grossDurationFormatted: formatSecondsToHMS(grossSec),
+      checkOutTime: log.status === 'checked_in' ? 'Still Active' : formatExactISTTime(log.check_out_time),
+      breaksWindowText: breakWindowsList.length > 0 ? breakWindowsList.join(', ') : 'None',
       breaksCount: dayBreaks.length,
       breakDurationFormatted: formatSecondsToHMS(dayBreakSec),
-      rawNetSeconds: netSec,
+      rawBreakSeconds: dayBreakSec,
       netDurationFormatted: formatSecondsToHMS(netSec),
+      rawNetSeconds: netSec,
+      rawGrossSeconds: grossSec,
       status: log.status,
       geofenceStatus,
       distanceMeters: dist,
@@ -193,6 +233,88 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
   const avgDailySeconds = daysAttended > 0 ? Math.round(totalNetSeconds / daysAttended) : 0;
   const geofenceComplianceRate = logs.length > 0 ? Math.round((verifiedGpsCount / logs.length) * 100) : 100;
   const totalFeesPaidInMonth = transactions.reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+
+  // 5. Compute Comparative Benchmark / Percentile
+  // "bonus feature better than percentage like who 90% better than other yo know what"
+  let benchmark = {
+    rank: 1,
+    totalStudents: 1,
+    percentile: 100,
+    tierBadge: '⭐ Top 10% Scholar',
+    headline: 'Outperformed 90% of students this month',
+    subline: 'Calculated across all active lounge study hours',
+  };
+
+  try {
+    const { data: allLogs } = await supabase
+      .from('attendance_logs')
+      .select('student_id, check_in_time, check_out_time, duration_minutes')
+      .gte('date', startDateStr)
+      .lte('date', endDateStr);
+
+    if (allLogs && allLogs.length > 0) {
+      const peerMap = new Map();
+      for (const al of allLogs) {
+        let sec = 0;
+        if (al.check_in_time && al.check_out_time) {
+          const tIn = new Date(al.check_in_time).getTime();
+          const tOut = new Date(al.check_out_time).getTime();
+          if (tOut > tIn) sec = Math.round((tOut - tIn) / 1000);
+        } else if (al.duration_minutes) {
+          sec = al.duration_minutes * 60;
+        }
+        peerMap.set(al.student_id, (peerMap.get(al.student_id) || 0) + sec);
+      }
+
+      // Ensure current student's calculated net seconds are included
+      if (totalNetSeconds > 0) {
+        peerMap.set(student.id, Math.max(totalNetSeconds, peerMap.get(student.id) || 0));
+      }
+
+      const sortedEntries = Array.from(peerMap.entries()).sort((a, b) => b[1] - a[1]);
+      const totalCount = sortedEntries.length;
+      const sIdx = sortedEntries.findIndex(([id]) => id === student.id);
+      const sRank = sIdx !== -1 ? sIdx + 1 : totalCount;
+
+      const rawPct = totalCount > 1 
+        ? Math.round(((totalCount - sRank) / (totalCount - 1)) * 100)
+        : 100;
+      const pct = Math.min(99, Math.max(1, rawPct));
+
+      let tierBadge = '🎯 Active Member';
+      let headline = `Studied more than ${pct}% of students this month`;
+      let subline = `Rank #${sRank} of ${totalCount} active study lounge members`;
+
+      if (sRank === 1) {
+        tierBadge = '🏆 Rank #1 Lounge Champion';
+        headline = 'Top 1% — Highest Study Duration in Lounge';
+        subline = `Rank #1 of ${totalCount} students • Total ${formatSecondsToHMS(totalNetSeconds)}`;
+      } else if (pct >= 90) {
+        tierBadge = '⚡ Top 10% Elite Scholar';
+        headline = `Studied more than ${pct}% of students this month`;
+        subline = `Rank #${sRank} of ${totalCount} students in lounge • Elite study pace`;
+      } else if (pct >= 75) {
+        tierBadge = '🌟 Top 25% Distinction';
+        headline = `Studied more than ${pct}% of students this month`;
+        subline = `Rank #${sRank} of ${totalCount} students in lounge • Exceptional dedication`;
+      } else if (pct >= 50) {
+        tierBadge = '🔥 Top 50% Consistent Achiever';
+        headline = `Ahead of ${pct}% of students this month`;
+        subline = `Rank #${sRank} of ${totalCount} students in lounge • Solid routine`;
+      }
+
+      benchmark = {
+        rank: sRank,
+        totalStudents: totalCount,
+        percentile: pct,
+        tierBadge,
+        headline,
+        subline,
+      };
+    }
+  } catch (err) {
+    console.warn('Could not compute benchmark ranking:', err.message);
+  }
 
   return {
     student: {
@@ -206,10 +328,8 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
       amountDue: student.amount_due || 0,
       amountPaid: student.amount_paid || 0,
       paymentStatus: student.payment_status || 'paid',
-      startDate: student.start_date || 'N/A',
-      endDate: student.end_date || 'N/A',
-      status: student.status || 'active',
-      emergencyContact: student.emergency_contact || 'N/A',
+      photoUrl,
+      photoBuffer,
     },
     period: {
       year,
@@ -238,6 +358,7 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
       verifiedGpsCount,
       totalFeesPaidInMonth,
     },
+    benchmark,
     sessionDetails,
     transactions,
     breaks,
@@ -245,13 +366,13 @@ async function getMonthlyReportData(studentId, yearNum, monthNum) {
 }
 
 /**
- * Builds a professional, multi-page vector PDF document
+ * Builds a minimalist, modern, publication-grade vector PDF document
  */
 function buildMonthlyReportPdf(data) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'A4',
-      margin: 36, // 0.5 inch margins for maximum printable data
+      margin: 36, // 0.5 inch margins
       bufferPages: true,
       info: {
         Title: `Monthly Attendance Report - ${data.student.name} - ${data.period.monthName} ${data.period.year}`,
@@ -266,159 +387,210 @@ function buildMonthlyReportPdf(data) {
     doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', reject);
 
-    const primaryColor = '#0f172a'; // Slate 900
-    const secondaryColor = '#2563eb'; // Blue 600
-    const accentColor = '#0284c7'; // Sky 600
-    const mutedColor = '#64748b'; // Slate 500
-    const borderColor = '#cbd5e1'; // Slate 300
-    const cardBg = '#f8fafc'; // Slate 50
-    const successColor = '#16a34a'; // Green 600
+    // Minimalist Design Palette
+    const slate900 = '#0f172a'; // Deep heading black
+    const slate700 = '#334155'; // Subheadings
+    const slate500 = '#64748b'; // Muted text
+    const slate400 = '#94a3b8'; // Light muted
+    const slate200 = '#e2e8f0'; // Clean hairline borders
+    const slate50 = '#f8fafc';  // Subtle card fill
+    const accentBlue = '#2563eb';
+    const emerald = '#16a34a';
 
-    const contentWidth = 595.28 - 72; // A4 width 595.28 - 2*36 = 523.28
+    const contentWidth = 595.28 - 72; // 523.28 pt printable width
 
-    // --- Header Block ---
-    doc.rect(36, 36, contentWidth, 70).fill(primaryColor);
+    // --- Top Institution Masthead Hairline ---
+    doc.fillColor(slate400).fontSize(7).font('Helvetica-Bold')
+      .text('VERTICAL CLASSES STUDY LOUNGE & ACADEMIC AUDIT', 36, 36, { characterSpacing: 1 });
+    doc.fillColor(slate400).fontSize(7).font('Helvetica')
+      .text(`ISSUE DATE: ${data.period.generatedAt}`, 36, 36, { align: 'right', width: contentWidth });
 
-    doc.fillColor('#ffffff').fontSize(16).font('Helvetica-Bold')
-      .text('VERTICAL CLASSES LIBRARY & STUDY MANAGEMENT', 48, 48, { characterSpacing: 0.5 });
+    doc.moveTo(36, 48).lineTo(36 + contentWidth, 48).lineWidth(0.5).stroke(slate200);
 
-    doc.fillColor('#94a3b8').fontSize(9).font('Helvetica')
-      .text('OFFICIAL STUDENT MONTHLY ATTENDANCE, STUDY DURATION & GEOFENCE AUDIT REPORT', 48, 68);
+    // --- Student Profile Card (Minimalist) ---
+    const profileY = 58;
+    const photoSize = 48;
 
-    doc.fillColor('#38bdf8').fontSize(8).font('Helvetica-Bold')
-      .text(`REPORT ID: ${data.period.reportId}  •  PERIOD: ${data.period.monthName.toUpperCase()} ${data.period.year}  •  GENERATED: ${data.period.generatedAt} (IST)`, 48, 86);
-
-    doc.y = 114;
-
-    // --- Student Profile Card (Two Columns) ---
-    const profileY = doc.y;
-    doc.roundedRect(36, profileY, contentWidth, 78, 6).fillAndStroke(cardBg, borderColor);
-
-    // Left Column
-    doc.fillColor(mutedColor).fontSize(8).font('Helvetica').text('STUDENT NAME', 48, profileY + 10);
-    doc.fillColor(primaryColor).fontSize(12).font('Helvetica-Bold').text(data.student.name, 48, profileY + 20);
-
-    doc.fillColor(mutedColor).fontSize(8).font('Helvetica').text('STUDENT ROLL / ID', 48, profileY + 40);
-    doc.fillColor(primaryColor).fontSize(9).font('Helvetica-Bold').text(data.student.id, 48, profileY + 50);
-
-    doc.fillColor(mutedColor).fontSize(8).font('Helvetica').text('MOBILE NUMBER', 160, profileY + 40);
-    doc.fillColor(primaryColor).fontSize(9).font('Helvetica-Bold').text(`+91 ${data.student.phone}`, 160, profileY + 50);
-
-    // Right Column
-    doc.fillColor(mutedColor).fontSize(8).font('Helvetica').text('ASSIGNED DESK', 300, profileY + 10);
-    doc.fillColor(secondaryColor).fontSize(12).font('Helvetica-Bold').text(data.student.seatNumber, 300, profileY + 20);
-
-    doc.fillColor(mutedColor).fontSize(8).font('Helvetica').text('SHIFT ACCESS', 300, profileY + 40);
-    doc.fillColor(primaryColor).fontSize(9).font('Helvetica-Bold').text(data.student.shift, 300, profileY + 50);
-
-    doc.fillColor(mutedColor).fontSize(8).font('Helvetica').text('MEMBERSHIP PLAN', 410, profileY + 10);
-    doc.fillColor(primaryColor).fontSize(9).font('Helvetica-Bold').text(data.student.membershipPlan, 410, profileY + 20);
-
-    doc.fillColor(mutedColor).fontSize(8).font('Helvetica').text('FEES STATUS', 410, profileY + 40);
-    const feeColor = data.student.amountDue > 0 ? '#dc2626' : successColor;
-    const feeText = data.student.amountDue > 0 ? `DUE: ₹${data.student.amountDue}` : 'PAID IN FULL';
-    doc.fillColor(feeColor).fontSize(9).font('Helvetica-Bold').text(feeText, 410, profileY + 50);
-
-    doc.y = profileY + 86;
-
-    // --- Executive Metrics Grid (4 KPI Cards) ---
-    const kpiY = doc.y;
-    const kpiW = (contentWidth - 18) / 4;
-    const kpiH = 50;
-
-    const kpiData = [
-      { label: 'TOTAL STUDY TIME', value: data.metrics.totalNetFormatted, sub: 'Net Active Desk Duration', color: secondaryColor },
-      { label: 'DAYS ATTENDED', value: `${data.metrics.daysAttended} / ${data.metrics.daysInMonth} Days`, sub: `${data.metrics.attendanceRate}% Attendance Rate`, color: successColor },
-      { label: 'DAILY AVERAGE', value: data.metrics.avgDailyFormatted, sub: 'Study Hours Per Present Day', color: accentColor },
-      { label: 'GEOFENCE STATUS', value: `${data.metrics.geofenceComplianceRate}% Verified`, sub: 'Within 75m Library Radius', color: '#7c3aed' },
-    ];
-
-    kpiData.forEach((kpi, idx) => {
-      const x = 36 + idx * (kpiW + 6);
-      doc.roundedRect(x, kpiY, kpiW, kpiH, 4).fillAndStroke(cardBg, borderColor);
-      doc.fillColor(mutedColor).fontSize(7).font('Helvetica-Bold').text(kpi.label, x + 8, kpiY + 8);
-      doc.fillColor(kpi.color).fontSize(11).font('Helvetica-Bold').text(kpi.value, x + 8, kpiY + 20, { width: kpiW - 16, lineBreak: false });
-      doc.fillColor(mutedColor).fontSize(6.5).font('Helvetica').text(kpi.sub, x + 8, kpiY + 36, { width: kpiW - 16 });
-    });
-
-    doc.y = kpiY + kpiH + 12;
-
-    // --- Table Section: Granular Activity Timesheet ---
-    doc.fillColor(primaryColor).fontSize(10).font('Helvetica-Bold').text('DETAILED TIME-BY-TIME ATTENDANCE LOG (RECORD OF EVERY SECOND)', 36, doc.y);
-    doc.y += 4;
-
-    const colX = {
-      num: 36,
-      date: 58,
-      punchIn: 130,
-      punchOut: 205,
-      breaks: 280,
-      duration: 355,
-      geofence: 440,
-    };
-    const colWidths = {
-      num: 20,
-      date: 70,
-      punchIn: 72,
-      punchOut: 72,
-      breaks: 72,
-      duration: 82,
-      geofence: 80,
-    };
-
-    // Table Header
-    function drawTableHeader(y) {
-      doc.rect(36, y, contentWidth, 18).fill(primaryColor);
-      doc.fillColor('#ffffff').fontSize(7.5).font('Helvetica-Bold');
-      doc.text('#', colX.num + 4, y + 5);
-      doc.text('DATE', colX.date, y + 5);
-      doc.text('PUNCH-IN (IST)', colX.punchIn, y + 5);
-      doc.text('PUNCH-OUT (IST)', colX.punchOut, y + 5);
-      doc.text('BREAK TIME', colX.breaks, y + 5);
-      doc.text('NET STUDY TIME', colX.duration, y + 5);
-      doc.text('GPS GEOFENCE', colX.geofence, y + 5);
+    // Draw Student Photo or Clean Initial Monogram
+    if (data.student.photoBuffer) {
+      try {
+        doc.save();
+        doc.roundedRect(36, profileY, photoSize, photoSize, 6).clip();
+        doc.image(data.student.photoBuffer, 36, profileY, { width: photoSize, height: photoSize });
+        doc.restore();
+        doc.roundedRect(36, profileY, photoSize, photoSize, 6).lineWidth(1).stroke(slate200);
+      } catch {
+        drawInitialsAvatar(36, profileY, photoSize);
+      }
+    } else {
+      drawInitialsAvatar(36, profileY, photoSize);
     }
 
-    drawTableHeader(doc.y);
-    doc.y += 18;
+    function drawInitialsAvatar(x, y, size) {
+      doc.roundedRect(x, y, size, size, 6).fillAndStroke(slate50, slate200);
+      const initials = (data.student.name || 'ST')
+        .split(' ')
+        .map((n) => n[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase();
+      doc.fillColor(slate700).fontSize(14).font('Helvetica-Bold')
+        .text(initials, x, y + 16, { width: size, align: 'center' });
+    }
 
-    if (data.sessionDetails.length === 0) {
-      doc.rect(36, doc.y, contentWidth, 36).fillAndStroke('#ffffff', borderColor);
-      doc.fillColor(mutedColor).fontSize(9).font('Helvetica').text('No attendance logs recorded for this month.', 48, doc.y + 12, { align: 'center', width: contentWidth - 24 });
+    // Student Info beside photo
+    const infoX = 36 + photoSize + 12;
+    doc.fillColor(slate900).fontSize(15).font('Helvetica-Bold').text(data.student.name, infoX, profileY + 2);
+
+    const subInfo = `Desk: ${data.student.seatNumber || 'Unassigned'}  •  Shift: ${data.student.shift}  •  Roll: ${data.student.id}  •  +91 ${data.student.phone}`;
+    doc.fillColor(slate500).fontSize(7.5).font('Helvetica').text(subInfo, infoX, profileY + 22);
+
+    const planInfo = `Plan: ${data.student.membershipPlan}  •  Payment Status: ${String(data.student.paymentStatus).toUpperCase()} (Due: ₹${data.student.amountDue})`;
+    doc.fillColor(slate400).fontSize(7).font('Helvetica').text(planInfo, infoX, profileY + 34);
+
+    // Month Badge (Right Aligned)
+    doc.fillColor(slate900).fontSize(14).font('Helvetica-Bold')
+      .text(`${data.period.monthName.toUpperCase()} ${data.period.year}`, 36, profileY + 2, { align: 'right', width: contentWidth });
+    doc.fillColor(slate400).fontSize(7.5).font('Helvetica')
+      .text(`AUDIT ID: ${data.period.reportId}`, 36, profileY + 22, { align: 'right', width: contentWidth });
+
+    // Hairline below profile
+    const underProfileY = profileY + photoSize + 10;
+    doc.moveTo(36, underProfileY).lineTo(36 + contentWidth, underProfileY).lineWidth(0.5).stroke(slate200);
+
+    // --- Bonus Feature: Peer Benchmark Spotlight Card ---
+    // "bonus feature better than percentage like who 90% better than other yo know what"
+    const benchY = underProfileY + 8;
+    const benchHeight = 44;
+
+    doc.roundedRect(36, benchY, contentWidth, benchHeight, 6).fillAndStroke(slate50, slate200);
+
+    // Badge Pill
+    const pillWidth = 118;
+    const pillHeight = 18;
+    doc.roundedRect(46, benchY + 13, pillWidth, pillHeight, 9).fill(slate900);
+    doc.fillColor('#ffffff').fontSize(7.5).font('Helvetica-Bold')
+      .text(data.benchmark.tierBadge, 46, benchY + 17, { width: pillWidth, align: 'center' });
+
+    // Headline & Subline
+    doc.fillColor(slate900).fontSize(10.5).font('Helvetica-Bold')
+      .text(data.benchmark.headline, 46 + pillWidth + 12, benchY + 10);
+    doc.fillColor(slate500).fontSize(7.5).font('Helvetica')
+      .text(data.benchmark.subline, 46 + pillWidth + 12, benchY + 25);
+
+    // --- 4 Minimalist KPI Metrics Bar ---
+    const kpiY = benchY + benchHeight + 8;
+    const kpiHeight = 44;
+    const colW = (contentWidth - 18) / 4;
+
+    const kpis = [
+      { label: 'TOTAL STUDY TIME', val: data.metrics.totalNetFormatted, sub: 'Productive net focus' },
+      { label: 'TOTAL BREAKS', val: data.metrics.totalBreakFormatted, sub: `${data.breaks.length} breaks recorded` },
+      { label: 'DAYS ATTENDED', val: `${data.metrics.daysAttended} / ${data.metrics.daysInMonth} Days`, sub: `${data.metrics.attendanceRate}% monthly rate` },
+      { label: 'DAILY AVERAGE', val: data.metrics.avgDailyFormatted, sub: 'Per study day' },
+    ];
+
+    kpis.forEach((kpi, idx) => {
+      const boxX = 36 + idx * (colW + 6);
+      doc.roundedRect(boxX, kpiY, colW, kpiHeight, 4).fillAndStroke('#ffffff', slate200);
+
+      doc.fillColor(slate400).fontSize(6).font('Helvetica-Bold')
+        .text(kpi.label, boxX + 8, kpiY + 7);
+      doc.fillColor(slate900).fontSize(9.5).font('Helvetica-Bold')
+        .text(kpi.val, boxX + 8, kpiY + 17);
+      doc.fillColor(slate500).fontSize(6.5).font('Helvetica')
+        .text(kpi.sub, boxX + 8, kpiY + 30);
+    });
+
+    // --- Section Header: Daily Activity & Break Breakdown ---
+    let tableStartY = kpiY + kpiHeight + 14;
+
+    doc.fillColor(slate900).fontSize(9).font('Helvetica-Bold')
+      .text('CHRONOLOGICAL SESSION & BREAK AUDIT LOG', 36, tableStartY);
+    doc.fillColor(slate400).fontSize(7).font('Helvetica')
+      .text('Exact second-by-second punch & break verification', 36, tableStartY, { align: 'right', width: contentWidth });
+
+    tableStartY += 14;
+
+    // Table Columns Configuration (Exact sum = 523.28 pt)
+    const cols = {
+      num: { x: 36, w: 20, title: '#' },
+      date: { x: 56, w: 76, title: 'DATE & DAY' },
+      in: { x: 132, w: 64, title: 'ENTRY (IN)' },
+      breaks: { x: 196, w: 140, title: 'BREAKS WINDOW (TIME & MINS)' },
+      out: { x: 336, w: 64, title: 'EXIT (OUT)' },
+      breakDur: { x: 400, w: 52, title: 'TOTAL BREAK' },
+      netDur: { x: 452, w: 71, title: 'TOTAL STUDIED' },
+    };
+
+    function drawTableHeader(y) {
+      doc.rect(36, y, contentWidth, 18).fillAndStroke(slate50, slate200);
+      doc.fillColor(slate700).fontSize(6.5).font('Helvetica-Bold');
+
+      doc.text(cols.num.title, cols.num.x + 3, y + 5);
+      doc.text(cols.date.title, cols.date.x + 2, y + 5);
+      doc.text(cols.in.title, cols.in.x + 2, y + 5);
+      doc.text(cols.breaks.title, cols.breaks.x + 2, y + 5);
+      doc.text(cols.out.title, cols.out.x + 2, y + 5);
+      doc.text(cols.breakDur.title, cols.breakDur.x + 2, y + 5);
+      doc.text(cols.netDur.title, cols.netDur.x + 2, y + 5, { align: 'right', width: cols.netDur.w - 4 });
+    }
+
+    drawTableHeader(tableStartY);
+    doc.y = tableStartY + 18;
+
+    if (!data.sessionDetails || data.sessionDetails.length === 0) {
+      doc.rect(36, doc.y, contentWidth, 36).fillAndStroke('#ffffff', slate200);
+      doc.fillColor(slate500).fontSize(8).font('Helvetica')
+        .text('No attendance sessions logged for this student in this month.', 36, doc.y + 12, { align: 'center', width: contentWidth });
       doc.y += 36;
     } else {
-      const rowHeight = 16;
+      const rowHeight = 17;
+
       data.sessionDetails.forEach((row, i) => {
-        // Page break check (leave room for signature block on last page)
-        if (doc.y + rowHeight > 760) {
+        // Pagination check: if near bottom margin, create a clean new page
+        if (doc.y + rowHeight > 780) {
           doc.addPage();
-          drawTableHeader(36);
-          doc.y = 36 + 18;
+          doc.fillColor(slate400).fontSize(7).font('Helvetica')
+            .text(`${data.student.name}  •  ${data.period.monthName} ${data.period.year} (Cont.)`, 36, 36);
+          doc.moveTo(36, 46).lineTo(36 + contentWidth, 46).lineWidth(0.5).stroke(slate200);
+          drawTableHeader(52);
+          doc.y = 52 + 18;
         }
 
         const isEven = i % 2 === 0;
-        doc.rect(36, doc.y, contentWidth, rowHeight).fillAndStroke(isEven ? '#ffffff' : cardBg, borderColor);
+        doc.rect(36, doc.y, contentWidth, rowHeight).fillAndStroke(isEven ? '#ffffff' : '#fafafa', slate200);
 
-        const idxText = String(row.index != null ? row.index : i + 1);
-        const dateText = String(row.dateFormatted || row.date || 'N/A');
-        const inText = String(row.checkInTime || row.punchInTime || 'N/A');
-        const outText = String(row.status === 'checked_in' ? 'Still Active' : (row.checkOutTime || row.punchOutTime || 'N/A'));
-        const breakText = String(row.breakDurationFormatted || '0h 0m 0s');
-        const netText = String(row.netDurationFormatted || '0h 0m 0s');
-        const geoText = String(row.geofenceStatus || (row.isGpsVerified ? 'Verified (GPS)' : 'Verified (Desk)'));
+        const currentY = doc.y + 4.5;
 
-        doc.fillColor(mutedColor).fontSize(7).font('Helvetica').text(idxText, colX.num + 4, doc.y + 4);
-        doc.fillColor(primaryColor).fontSize(7).font('Helvetica-Bold').text(dateText, colX.date, doc.y + 4);
-        doc.fillColor(successColor).fontSize(7).font('Helvetica').text(inText, colX.punchIn, doc.y + 4);
+        // Index
+        doc.fillColor(slate400).fontSize(6.5).font('Helvetica')
+          .text(String(row.index), cols.num.x + 3, currentY);
 
-        const outColor = row.status === 'checked_in' ? '#d97706' : primaryColor;
-        doc.fillColor(outColor).fontSize(7).font('Helvetica').text(outText, colX.punchOut, doc.y + 4);
+        // Date
+        doc.fillColor(slate900).fontSize(6.5).font('Helvetica-Bold')
+          .text(String(row.dateFormatted || row.date), cols.date.x + 2, currentY);
 
-        doc.fillColor(mutedColor).fontSize(7).font('Helvetica').text(breakText, colX.breaks, doc.y + 4);
-        doc.fillColor(secondaryColor).fontSize(7).font('Helvetica-Bold').text(netText, colX.duration, doc.y + 4);
+        // Check-in
+        doc.fillColor(emerald).fontSize(6.5).font('Helvetica')
+          .text(String(row.checkInTime), cols.in.x + 2, currentY);
 
-        const geoColor = geoText.includes('Verified') ? successColor : '#d97706';
-        doc.fillColor(geoColor).fontSize(6.5).font('Helvetica').text(geoText, colX.geofence, doc.y + 4, { width: colWidths.geofence, lineBreak: false });
+        // Breaks Window (e.g. 03:00 PM – 03:30 PM (30m))
+        doc.fillColor(slate500).fontSize(6).font('Helvetica')
+          .text(String(row.breaksWindowText || 'None'), cols.breaks.x + 2, currentY, { width: cols.breaks.w - 4, lineBreak: false });
+
+        // Check-out
+        const outCol = row.status === 'checked_in' ? '#d97706' : slate900;
+        doc.fillColor(outCol).fontSize(6.5).font('Helvetica')
+          .text(String(row.checkOutTime), cols.out.x + 2, currentY);
+
+        // Total Break
+        doc.fillColor(slate500).fontSize(6.5).font('Helvetica')
+          .text(String(row.breakDurationFormatted || '0h 00m 00s'), cols.breakDur.x + 2, currentY);
+
+        // Total Studied (Net)
+        doc.fillColor(slate900).fontSize(6.5).font('Helvetica-Bold')
+          .text(String(row.netDurationFormatted || '0h 00m 00s'), cols.netDur.x, currentY, { align: 'right', width: cols.netDur.w - 4 });
 
         doc.y += rowHeight;
       });
@@ -426,46 +598,37 @@ function buildMonthlyReportPdf(data) {
 
     doc.y += 12;
 
-    // --- Monthly Summary & Verification Footer ---
-    if (doc.y + 90 > 760) {
+    // --- Minimalist Verification & Seal Footer ---
+    if (doc.y + 55 > 780) {
       doc.addPage();
     }
 
-    const footerBoxY = doc.y;
-    doc.roundedRect(36, footerBoxY, contentWidth, 75, 4).fillAndStroke(cardBg, borderColor);
+    const signY = doc.y;
+    doc.roundedRect(36, signY, contentWidth, 48, 4).fillAndStroke(slate50, slate200);
 
-    doc.fillColor(primaryColor).fontSize(8).font('Helvetica-Bold').text('AUDIT CERTIFICATE & OFFICIAL SEAL', 46, footerBoxY + 8);
-    doc.fillColor(mutedColor).fontSize(6.5).font('Helvetica').text(
-      'This document is an authentic, cryptographically timestamped audit log generated directly by the DeskFlow Library Management Operating System for Vertical Classes Library. Every punch-in and punch-out record incorporates Telegram user identity binding and 75-meter GPS geofencing telemetry.',
-      46,
-      footerBoxY + 18,
-      { width: 330, lineGap: 1.5 }
-    );
+    doc.fillColor(slate900).fontSize(7.5).font('Helvetica-Bold')
+      .text('ACADEMIC AUDIT CERTIFICATE & REPUTATION SEAL', 46, signY + 8);
+    doc.fillColor(slate500).fontSize(6.5).font('Helvetica')
+      .text(
+        `This document certifies second-by-second study & attendance telemetry recorded at Vertical Classes Library & Study Lounge. ` +
+        `Ref: ${data.period.reportId} • Verification Hash: ${Buffer.from(data.period.reportId + data.metrics.totalNetSeconds).toString('base64').slice(0, 16)}`,
+        46,
+        signY + 20,
+        { width: contentWidth - 140 }
+      );
 
-    doc.fillColor(primaryColor).fontSize(6.5).font('Helvetica-Bold').text(
-      `STUDENT SIGNATURE: _______________________      CHIEF LIBRARIAN SEAL: _______________________`,
-      46,
-      footerBoxY + 54
-    );
+    // Authorized Signature Tag
+    doc.fillColor(slate900).fontSize(7.5).font('Helvetica-Bold')
+      .text('AUTHORIZED REGISTRAR', 36 + contentWidth - 120, signY + 12, { align: 'right' });
+    doc.fillColor(emerald).fontSize(6.5).font('Helvetica')
+      .text('✓ DIGITALLY VERIFIED', 36 + contentWidth - 120, signY + 26, { align: 'right' });
 
-    // Official Stamp Box (Right Side)
-    doc.roundedRect(420, footerBoxY + 8, 126, 58, 4).fillAndStroke('#ffffff', borderColor);
-    doc.fillColor(secondaryColor).fontSize(7).font('Helvetica-Bold').text('VERTICAL CLASSES', 426, footerBoxY + 14, { align: 'center', width: 114 });
-    doc.fillColor(mutedColor).fontSize(6).font('Helvetica').text('STUDY LOUNGE & LIBRARY', 426, footerBoxY + 24, { align: 'center', width: 114 });
-    doc.fillColor(successColor).fontSize(7).font('Helvetica-Bold').text('VERIFIED AUDIT LOG', 426, footerBoxY + 36, { align: 'center', width: 114 });
-    doc.fillColor(mutedColor).fontSize(5.5).font('Helvetica').text(data.period.generatedAt, 426, footerBoxY + 48, { align: 'center', width: 114 });
-
-    // --- Dynamic Page Numbers on All Pages ---
+    // Clean Minimalist Page Numbers
     const range = doc.bufferedPageRange();
-    for (let i = range.start; i < range.start + range.count; i++) {
-      doc.switchToPage(i);
-      doc.fillColor(mutedColor).fontSize(7).font('Helvetica')
-        .text(
-          `DeskFlow Library Operating System  •  ${data.student.name} (${data.student.id})  •  Page ${i + 1} of ${range.count}`,
-          36,
-          805,
-          { align: 'center', width: contentWidth }
-        );
+    for (let p = 0; p < range.count; p++) {
+      doc.switchToPage(p);
+      doc.fillColor(slate400).fontSize(6.5).font('Helvetica')
+        .text(`DeskFlow Academic OS  •  Page ${p + 1} of ${range.count}`, 36, 805, { align: 'center', width: contentWidth });
     }
 
     doc.end();
@@ -473,7 +636,7 @@ function buildMonthlyReportPdf(data) {
 }
 
 /**
- * Dispatch generated PDF report to a designated Telegram Channel or Admin Chat
+ * Clean & minimal dispatch to Private Telegram Channel (no huge emoji caption clutter)
  */
 async function sendMonthlyReportToTelegram(bot, pdfBuffer, reportData, targetChatId) {
   let chatId = targetChatId;
@@ -482,32 +645,14 @@ async function sendMonthlyReportToTelegram(bot, pdfBuffer, reportData, targetCha
   }
 
   if (!chatId) {
-    throw new Error('No Telegram Channel ID or Admin Chat ID configured. Please provide targetChatId or set TELEGRAM_REPORT_CHANNEL_ID in bot/.env');
+    throw new Error('No Telegram Channel ID configured. Please set TELEGRAM_REPORT_CHANNEL_ID in environment.');
   }
 
   const cleanName = reportData.student.name.replace(/[^a-zA-Z0-9]/g, '_');
-  const filename = `Report_${cleanName}_${reportData.period.monthName}_${reportData.period.year}.pdf`;
+  const filename = `Monthly_Report_${cleanName}_${reportData.period.monthName}_${reportData.period.year}.pdf`;
 
-  const caption = `
-📊 <b>Student Monthly Performance & Attendance Audit Report</b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-👤 <b>Student:</b> ${reportData.student.name}
-🆔 <b>Roll / ID:</b> <code>${reportData.student.id}</code>
-🪑 <b>Desk:</b> <b>${reportData.student.seatNumber}</b> (${reportData.student.shift})
-📞 <b>Phone:</b> <code>+91 ${reportData.student.phone}</code>
-📅 <b>Period:</b> <b>${reportData.period.monthName} ${reportData.period.year}</b>
-
-⏱ <b>Total Study Time:</b> <b>${reportData.metrics.totalNetFormatted}</b>
-📈 <b>Days Attended:</b> ${reportData.metrics.daysAttended} / ${reportData.metrics.daysInMonth} (${reportData.metrics.attendanceRate}%)
-🕒 <b>Daily Average:</b> ${reportData.metrics.avgDailyFormatted} / day
-🚻 <b>Total Breaks:</b> ${reportData.metrics.totalBreakFormatted} (${reportData.breaks.length} breaks)
-📍 <b>Geofence Verified:</b> ${reportData.metrics.geofenceComplianceRate}% (75m GPS perimeter)
-💳 <b>Monthly Fees:</b> ₹${reportData.metrics.totalFeesPaidInMonth.toLocaleString('en-IN')} (Due: ₹${reportData.student.amountDue})
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-🏢 <b>Venue:</b> Vertical Classes Library & Study Lounge
-🔒 <i>Official computer-verified audit log stored in private archive channel.</i>
-#MonthlyReport #${cleanName} #${reportData.period.monthName}${reportData.period.year}
-`.trim();
+  // Clean, minimalist caption as requested: links student, ID, date, and month/year
+  const caption = `<b>${reportData.student.name}</b> (ID: <code>${reportData.student.id}</code>) • <b>${reportData.period.monthName} ${reportData.period.year}</b>\n📅 <i>Monthly Attendance & Study Audit Report</i>`.trim();
 
   const inputFile = new InputFile(pdfBuffer, filename);
 

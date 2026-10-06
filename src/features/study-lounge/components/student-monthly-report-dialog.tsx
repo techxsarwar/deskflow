@@ -17,6 +17,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Dialog,
   DialogContent,
@@ -272,17 +273,48 @@ export function StudentMonthlyReportDialog({
             <>
               {/* Student Overview Strip */}
               <div className='rounded-xl border bg-card p-4 flex flex-wrap items-center justify-between gap-4'>
-                <div>
-                  <h3 className='font-bold text-base text-foreground'>{reportData.student.name}</h3>
-                  <p className='text-xs text-muted-foreground font-mono'>
-                    Roll: {reportData.student.id} • +91 {reportData.student.phone}
-                  </p>
+                <div className='flex items-center gap-3'>
+                  <Avatar className='h-12 w-12 rounded-lg border'>
+                    <AvatarImage src={student.photoUrl || reportData.student.photoUrl} alt={reportData.student.name} />
+                    <AvatarFallback className='rounded-lg font-bold text-xs'>
+                      {(reportData.student.name || 'ST')
+                        .split(' ')
+                        .map((n: string) => n[0])
+                        .slice(0, 2)
+                        .join('')
+                        .toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <h3 className='font-bold text-base text-foreground'>{reportData.student.name}</h3>
+                    <p className='text-xs text-muted-foreground font-mono'>
+                      Roll: {reportData.student.id} • +91 {reportData.student.phone}
+                    </p>
+                  </div>
                 </div>
                 <div className='text-right'>
                   <p className='text-xs font-medium text-muted-foreground'>Audit Ref ID</p>
                   <p className='text-xs font-mono font-bold text-primary'>{reportData.period.reportId}</p>
                 </div>
               </div>
+
+              {/* Peer Benchmark Spotlight Banner */}
+              {reportData.benchmark && (
+                <div className='rounded-xl border border-primary/20 bg-primary/5 p-3.5 flex flex-wrap items-center justify-between gap-3'>
+                  <div className='flex items-center gap-3'>
+                    <Badge className='bg-primary text-primary-foreground font-bold text-xs py-1 px-2.5'>
+                      {reportData.benchmark.tierBadge}
+                    </Badge>
+                    <div>
+                      <p className='font-bold text-sm text-foreground'>{reportData.benchmark.headline}</p>
+                      <p className='text-xs text-muted-foreground'>{reportData.benchmark.subline}</p>
+                    </div>
+                  </div>
+                  <Badge variant='outline' className='font-mono text-xs font-semibold'>
+                    Rank #{reportData.benchmark.rank} of {reportData.benchmark.totalStudents} Peers
+                  </Badge>
+                </div>
+              )}
 
               {/* KPI Performance Cards */}
               <div className='grid grid-cols-2 sm:grid-cols-4 gap-3'>
@@ -330,13 +362,13 @@ export function StudentMonthlyReportDialog({
                 <Card className='border-purple-500/20 bg-purple-500/5 shadow-none'>
                   <CardContent className='p-3.5 space-y-1'>
                     <div className='flex items-center justify-between text-muted-foreground'>
-                      <span className='text-[11px] font-semibold uppercase'>GPS Geofence</span>
+                      <span className='text-[11px] font-semibold uppercase'>Total Breaks</span>
                       <ShieldCheck className='h-3.5 w-3.5 text-purple-600' />
                     </div>
                     <div className='text-lg font-bold text-purple-600 font-mono'>
-                      {reportData.metrics.geofenceComplianceRate}% Verified
+                      {reportData.metrics.totalBreakFormatted}
                     </div>
-                    <p className='text-[10px] text-muted-foreground'>Inside 75m Library Perimeter</p>
+                    <p className='text-[10px] text-muted-foreground'>{reportData.breaks.length} breaks recorded</p>
                   </CardContent>
                 </Card>
               </div>
@@ -346,10 +378,10 @@ export function StudentMonthlyReportDialog({
                 <div className='flex items-center justify-between'>
                   <h4 className='text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5'>
                     <Sparkles className='h-3.5 w-3.5 text-primary' />
-                    Exact Seconds Attendance Audit ({reportData.sessionDetails.length} Sessions)
+                    Chronological Attendance & Breaks Timesheet ({reportData.sessionDetails.length} Sessions)
                   </h4>
                   <span className='text-[11px] text-muted-foreground'>
-                    Total Breaks: {reportData.metrics.totalBreakFormatted} ({reportData.breaks.length} breaks)
+                    Total Breaks: {reportData.metrics.totalBreakFormatted}
                   </span>
                 </div>
 
@@ -360,11 +392,11 @@ export function StudentMonthlyReportDialog({
                         <tr>
                           <th className='py-2 px-3'>#</th>
                           <th className='py-2 px-3'>Date</th>
-                          <th className='py-2 px-3'>Punch-In (IST)</th>
-                          <th className='py-2 px-3'>Punch-Out (IST)</th>
-                          <th className='py-2 px-3'>Break Time</th>
-                          <th className='py-2 px-3'>Net Study Duration</th>
-                          <th className='py-2 px-3 text-right'>GPS Telemetry</th>
+                          <th className='py-2 px-3'>Punch-In</th>
+                          <th className='py-2 px-3'>Breaks Window</th>
+                          <th className='py-2 px-3'>Punch-Out</th>
+                          <th className='py-2 px-3'>Break Duration</th>
+                          <th className='py-2 px-3 text-right'>Net Studied</th>
                         </tr>
                       </thead>
                       <tbody className='divide-y divide-border/50'>
@@ -384,23 +416,17 @@ export function StudentMonthlyReportDialog({
                               <td className='py-2 px-3 font-mono text-emerald-600 font-medium whitespace-nowrap'>
                                 {s.checkInTime}
                               </td>
+                              <td className='py-2 px-3 text-muted-foreground text-xs whitespace-nowrap'>
+                                {s.breaksWindowText || 'None'}
+                              </td>
                               <td className='py-2 px-3 font-mono text-foreground font-medium whitespace-nowrap'>
                                 {s.checkOutTime}
                               </td>
                               <td className='py-2 px-3 text-muted-foreground font-mono'>
                                 {s.breakDurationFormatted}
                               </td>
-                              <td className='py-2 px-3 font-mono font-bold text-primary whitespace-nowrap'>
+                              <td className='py-2 px-3 font-mono font-bold text-primary text-right whitespace-nowrap'>
                                 {s.netDurationFormatted}
-                              </td>
-                              <td className='py-2 px-3 text-right whitespace-nowrap'>
-                                <span className={`inline-flex items-center text-[10px] px-2 py-0.5 rounded-full border font-medium ${
-                                  s.geofenceStatus.includes('Verified')
-                                    ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30'
-                                    : 'bg-amber-500/10 text-amber-600 border-amber-500/30'
-                                }`}>
-                                  {s.geofenceStatus}
-                                </span>
                               </td>
                             </tr>
                           ))
