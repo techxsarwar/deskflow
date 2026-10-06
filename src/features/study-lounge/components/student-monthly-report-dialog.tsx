@@ -3,6 +3,7 @@ import {
   FileText,
   Download,
   Send,
+  Mail,
   Loader2,
   Calendar,
   Clock,
@@ -68,6 +69,7 @@ export function StudentMonthlyReportDialog({
 
   const [isLoading, setIsLoading] = useState(false)
   const [isSendingTelegram, setIsSendingTelegram] = useState(false)
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
   const [reportData, setReportData] = useState<any>(null)
   const [pdfBase64, setPdfBase64] = useState<string | null>(null)
   const [pdfFilename, setPdfFilename] = useState<string>('')
@@ -206,6 +208,34 @@ export function StudentMonthlyReportDialog({
       toast.error('Upload Error', { description: msg })
     } finally {
       setIsSendingTelegram(false)
+    }
+  }
+
+  // Handle direct branded HTML email dispatch via Resend
+  const handleSendEmail = async () => {
+    setIsSendingEmail(true)
+    try {
+      const res = await studyLoungeApi.emailMonthlyReport({
+        studentId: student.id,
+        year: parseInt(selectedYear, 10),
+        month: parseInt(selectedMonth, 10),
+        email: student.email || undefined,
+      })
+
+      if (res.success) {
+        toast.success('📧 PDF Report Sent to Student!', {
+          description: `Dispatched to ${res.recipient || student.email || 'student email'}.`,
+        })
+      } else {
+        toast.warning('Email Notice', {
+          description: res.message || 'Could not send report email.',
+        })
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Email dispatch failed'
+      toast.error('Email Dispatch Error', { description: msg })
+    } finally {
+      setIsSendingEmail(false)
     }
   }
 
@@ -516,6 +546,27 @@ export function StudentMonthlyReportDialog({
             >
               <Download className='h-3.5 w-3.5' />
               Download PDF
+            </Button>
+
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              className='gap-1.5'
+              disabled={isLoading || isSendingEmail || !reportData}
+              onClick={handleSendEmail}
+            >
+              {isSendingEmail ? (
+                <>
+                  <Loader2 className='h-3.5 w-3.5 animate-spin' />
+                  Sending Email...
+                </>
+              ) : (
+                <>
+                  <Mail className='h-3.5 w-3.5' />
+                  Email to Student
+                </>
+              )}
             </Button>
 
             <Button

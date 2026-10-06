@@ -156,5 +156,22 @@ export const studyLoungeApi = {
     })
     return res.data
   },
+
+  // Email Student Monthly Report PDF directly via Resend
+  emailMonthlyReport: async (params: {
+    studentId: string
+    year?: number
+    month?: number
+    email?: string
+  }): Promise<{
+    success: boolean
+    message: string
+    recipient?: string
+    filename?: string
+  }> => {
+    const res = await api.post('/api/reports/email-student', params)
+    return res.data
+  },
 }
+
 

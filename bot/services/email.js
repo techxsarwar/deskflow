@@ -948,12 +948,188 @@ async function broadcastAnnouncement({ students, title, body, libraryName = 'Ver
   }
 }
 
+function getMonthlyReportHtml({ student, reportData, libraryName = 'Vertical Classes' }) {
+  const periodStr = `${reportData.period.monthName} ${reportData.period.year}`;
+  const seatNo = student?.seat_number || 'Desk Assigned';
+  const shift = (student?.shift || 'fullday').toUpperCase() === 'FULLDAY' ? 'Full Day Access' : `${(student?.shift || 'General').toUpperCase()} Shift`;
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monthly Study Report - ${student.full_name || student.name} - ${periodStr}</title>
+</head>
+<body style="margin:0;padding:32px 16px;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:20px;border:1px solid #e2e8f0;box-shadow:0 4px 20px -2px rgba(15,23,42,0.06);overflow:hidden;">
+    <!-- Top Header -->
+    <tr>
+      <td style="padding:28px 36px 20px 36px;border-bottom:1px solid #f1f5f9;background:#fafbfc;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:#64748b;text-transform:uppercase;margin-bottom:4px;">
+          ${libraryName.toUpperCase()} &bull; STUDY LOUNGE AUDIT
+        </div>
+        <div style="font-size:20px;font-weight:800;letter-spacing:-0.4px;color:#0f172a;">
+          Monthly Study & Attendance Report
+        </div>
+        <div style="font-size:13px;color:#64748b;margin-top:4px;">
+          Period: <b>${periodStr}</b> &bull; Student: <b>${student.full_name || student.name}</b>
+        </div>
+      </td>
+    </tr>
+
+    <!-- Benchmark Banner -->
+    <tr>
+      <td style="padding:24px 36px 16px 36px;">
+        <div style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%);border-radius:14px;padding:20px 24px;color:#ffffff;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#38bdf8;text-transform:uppercase;">
+            PEER BENCHMARK RANKING
+          </div>
+          <div style="font-size:22px;font-weight:800;margin-top:6px;color:#ffffff;">
+            ${reportData.benchmark.tierBadge}
+          </div>
+          <div style="font-size:13px;color:#94a3b8;margin-top:4px;">
+            ${reportData.benchmark.headline} &bull; ${reportData.benchmark.subline}
+          </div>
+        </div>
+      </td>
+    </tr>
+
+    <!-- Stats Grid -->
+    <tr>
+      <td style="padding:10px 36px 24px 36px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td width="48%" style="padding:16px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;">
+              <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Net Study</div>
+              <div style="font-size:24px;font-weight:900;color:#0f172a;margin-top:4px;">${reportData.metrics.totalNetFormatted}</div>
+              <div style="font-size:11px;color:#059669;margin-top:2px;">Excludes all break time</div>
+            </td>
+            <td width="4%"></td>
+            <td width="48%" style="padding:16px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;">
+              <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Attendance Rate</div>
+              <div style="font-size:24px;font-weight:900;color:#0f172a;margin-top:4px;">${reportData.metrics.daysAttended} / ${reportData.metrics.daysInMonth} Days</div>
+              <div style="font-size:11px;color:#64748b;margin-top:2px;">${reportData.metrics.attendanceRate}% of calendar days</div>
+            </td>
+          </tr>
+          <tr><td height="12" colspan="3"></td></tr>
+          <tr>
+            <td width="48%" style="padding:16px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;">
+              <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Average Daily Study</div>
+              <div style="font-size:20px;font-weight:800;color:#0f172a;margin-top:4px;">${reportData.metrics.avgDailyFormatted}</div>
+              <div style="font-size:11px;color:#64748b;margin-top:2px;">Per attended day</div>
+            </td>
+            <td width="4%"></td>
+            <td width="48%" style="padding:16px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;">
+              <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Total Breaks Taken</div>
+              <div style="font-size:20px;font-weight:800;color:#0f172a;margin-top:4px;">${reportData.metrics.totalBreakFormatted}</div>
+              <div style="font-size:11px;color:#64748b;margin-top:2px;">Restroom & tea windows</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Details Box -->
+    <tr>
+      <td style="padding:0 36px 28px 36px;">
+        <div style="padding:16px;background:#fafbfc;border:1px dashed #cbd5e1;border-radius:12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:12px;color:#475569;">
+            <tr>
+              <td style="padding:4px 0;"><b>Desk:</b> ${seatNo}</td>
+              <td style="padding:4px 0;" align="right"><b>Slot:</b> ${shift}</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 0;"><b>Roll ID:</b> ${student.id}</td>
+              <td style="padding:4px 0;" align="right"><b>Audit ID:</b> ${reportData.period.reportId}</td>
+            </tr>
+          </table>
+        </div>
+      </td>
+    </tr>
+
+    <!-- Attachment Notification -->
+    <tr>
+      <td style="padding:0 36px 28px 36px;">
+        <div style="padding:14px 18px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;font-size:12px;color:#166534;line-height:1.5;">
+          📎 <b>Official Audit PDF Attached:</b> Your complete second-by-second punch log, break intervals, and registrar verification seal is attached to this email.
+        </div>
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="padding:20px 36px 28px 36px;border-top:1px solid #f1f5f9;text-align:center;font-size:11px;color:#94a3b8;line-height:1.6;">
+        Generated by <b>DeskFlow Master Attendance System</b> &bull; Vertical Classes Study Lounge<br>
+        Questions? Contact your lounge administrator or reach us via Telegram @controllibrarybot
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+}
+
+async function sendMonthlyReportEmail({ student, reportData, pdfBuffer, customRecipient = null }) {
+  if (!resend) {
+    console.warn('Resend API key not configured, skipping report email dispatch.');
+    return { success: false, error: 'Resend API key not configured' };
+  }
+
+  const recipientEmail = customRecipient || student?.email || ADMIN_FALLBACK_EMAIL;
+  if (!recipientEmail) {
+    throw new Error('No recipient email available for student.');
+  }
+
+  const cleanName = (student.full_name || student.name || 'Student').replace(/[^a-zA-Z0-9]/g, '_');
+  const filename = `Monthly_Report_${cleanName}_${reportData.period.monthName}_${reportData.period.year}.pdf`;
+  const subject = `📊 Monthly Study & Attendance Report — ${reportData.period.monthName} ${reportData.period.year} (${student.full_name || student.name})`;
+
+  const html = getMonthlyReportHtml({ student, reportData });
+
+  try {
+    const fromAddress = process.env.RESEND_FROM_EMAIL || 'Vertical Classes Library <receipts@globalpulse24.in>';
+    const emailPayload = {
+      from: fromAddress,
+      to: recipientEmail,
+      subject,
+      html,
+      attachments: [
+        {
+          filename,
+          content: pdfBuffer,
+        },
+      ],
+    };
+
+    const res = await resend.emails.send(emailPayload);
+
+    if (res.error) {
+      if (res.error.message && res.error.message.includes('can only send testing emails to your own email address')) {
+        console.warn(`Resend sandbox warning: forwarding report email to admin fallback: ${ADMIN_FALLBACK_EMAIL}`);
+        emailPayload.to = ADMIN_FALLBACK_EMAIL;
+        emailPayload.subject = `[Forwarded for ${student.full_name || student.name}] ${subject}`;
+        const fallbackRes = await resend.emails.send(emailPayload);
+        return { success: true, sandbox: true, data: fallbackRes.data, recipient: ADMIN_FALLBACK_EMAIL, filename };
+      }
+      throw new Error(res.error.message);
+    }
+
+    return { success: true, data: res.data, recipient: recipientEmail, filename };
+  } catch (err) {
+    console.error('Failed to send monthly report email:', err);
+    throw err;
+  }
+}
+
 module.exports = {
   sendReceiptEmail,
   sendReminderEmail,
   sendWifiCredentialsEmail,
   broadcastWifiCredentials,
   broadcastAnnouncement,
+  sendMonthlyReportEmail,
+  getMonthlyReportHtml,
   getReceiptHtml,
   getReminderHtml,
   getWifiCredentialsHtml,

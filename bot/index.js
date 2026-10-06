@@ -12,6 +12,7 @@ const {
   sendWifiCredentialsEmail,
   broadcastWifiCredentials,
   broadcastAnnouncement,
+  sendMonthlyReportEmail,
 } = require('./services/email');
 const {
   sendPhoneToken,
@@ -127,6 +128,36 @@ const adminFlowState = new Map();
 const pendingAttendanceState = new Map();
 // In-memory mapping of Telegram Chat ID -> Student Profile
 const studentChatMap = new Map();
+// In-memory mapping of Student ID -> Telegram Chat ID (reverse lookup for push notifications)
+const studentToChatMap = new Map();
+// Set of attendance log IDs that have already received an auto-checkout reminder today
+const autoCheckoutRemindersSent = new Set();
+
+// Helper: Resolve a student's Telegram Chat ID from memory or past break records
+async function getStudentChatId(studentId) {
+  if (!studentId) return null;
+  if (studentToChatMap.has(studentId)) return studentToChatMap.get(studentId);
+  for (const [cId, stu] of studentChatMap.entries()) {
+    if (stu && stu.id === studentId) {
+      studentToChatMap.set(studentId, cId);
+      return cId;
+    }
+  }
+  try {
+    const { data } = await db.supabase
+      .from('student_breaks')
+      .select('telegram_chat_id')
+      .eq('student_id', studentId)
+      .not('telegram_chat_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (data && data[0]?.telegram_chat_id) {
+      studentToChatMap.set(studentId, data[0].telegram_chat_id);
+      return data[0].telegram_chat_id;
+    }
+  } catch (e) {}
+  return null;
+}
 
 // Helper: Ensure the caller is an authenticated administrator
 async function ensureAdmin(ctx) {
@@ -158,9 +189,10 @@ function getStudentMenuKeyboard() {
     .text('🚻 Take Restroom Break', 'student_break_guide')
     .text('🟢 Back at My Desk', 'student_back_guide')
     .row()
+    .text('📄 My Attendance Report', 'student_my_report')
     .text('🔍 Check My Desk Status', 'student_check_presence')
-    .text('📶 Library Wi-Fi Pass', 'student_wifi_view')
     .row()
+    .text('📶 Library Wi-Fi Pass', 'student_wifi_view')
     .text('🔄 Refresh Menu', 'student_menu_refresh');
 }
 
@@ -178,6 +210,7 @@ Manage your attendance, restroom / study breaks, and Wi-Fi access below:
 • <code>/checkout</code> — Share phone number to record study hours
 • <code>/break</code> — Take 10m, 15m, or custom study break
 • <code>/back</code> — Tap when back at your desk
+• <code>/myreport</code> — View your monthly study hours & attendance audit
 • <code>/check</code> — View your live desk & presence status
 • <code>/wifi</code> — View library high-speed Wi-Fi password
 `;
@@ -944,8 +977,8 @@ bot.on('message:text', async (ctx, next) => {
   const chatId = ctx.chat.id;
   const state = adminFlowState.get(chatId);
 
-  // Guard: Any administrative flow state requires verified admin privileges
-  if (state && state.action !== 'awaiting_break_duration') {
+  // Guard: Any administrative flow state requires verified admin privileges (except student self-service flows)
+  if (state && state.action !== 'awaiting_break_duration' && state.action !== 'awaiting_student_report_phone') {
     const isAdmin = await db.isAdminChatId(chatId);
     if (!isAdmin) {
       adminFlowState.delete(chatId);
@@ -953,11 +986,18 @@ bot.on('message:text', async (ctx, next) => {
     }
   }
 
-  // Monthly Report Search Flow
+  // Monthly Report Search Flow (Admin)
   if (state && state.action === 'awaiting_report_query') {
     adminFlowState.delete(chatId);
     const query = ctx.message.text.trim();
     return handleReportStudentSearch(ctx, query);
+  }
+
+  // Student Self-Service Report Auth Flow (Student)
+  if (state && state.action === 'awaiting_student_report_phone') {
+    adminFlowState.delete(chatId);
+    const query = ctx.message.text.trim();
+    return handleStudentSelfReport(ctx, query);
   }
 
   // Announcement Flow - Step 1: Subject / Title
@@ -1276,6 +1316,20 @@ Please contact the administration counter or apply online at:
         parse_mode: 'HTML',
         reply_markup: { remove_keyboard: true },
       });
+    }
+
+    // Cache student profile & reverse chat ID mapping
+    studentChatMap.set(ctx.chat.id, student);
+    studentToChatMap.set(student.id, ctx.chat.id);
+
+    // If student shared contact to view their monthly report, route directly to report generator
+    if (adminFlowState.get(ctx.chat.id)?.action === 'awaiting_student_report_phone') {
+      adminFlowState.delete(ctx.chat.id);
+      await ctx.reply(`✅ <b>Account Verified:</b> Welcome, <b>${student.full_name}</b>!`, {
+        parse_mode: 'HTML',
+        reply_markup: { remove_keyboard: true },
+      });
+      return showStudentSelfReportYearSelection(ctx, student, false);
     }
 
     const todayStr = getISTDateString();
@@ -3513,6 +3567,10 @@ Compiling second-by-second punch logs, breaks, and peer benchmark rankings...
       }
     }
 
+    const adminActionKb = new InlineKeyboard()
+      .text('📧 Email to Student', `rpt_email_${studentId}_${year}_${month}`)
+      .row();
+
     await ctx.reply(`
 ✅ <b>Audit Report Delivered!</b>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3520,7 +3578,7 @@ Compiling second-by-second punch logs, breaks, and peer benchmark rankings...
 ⏱ <b>Total Net Study:</b> ${reportData.metrics.totalNetFormatted}
 🏆 <b>Benchmark:</b> ${reportData.benchmark.tierBadge}
 ${channelArchived ? '🔒 <b>Archived:</b> Saved to Private Telegram Archive Channel.' : ''}
-`, { parse_mode: 'HTML' });
+`, { parse_mode: 'HTML', reply_markup: adminActionKb });
   } catch (err) {
     console.error('Report generation error:', err);
     await ctx.reply(`❌ Failed to generate report: ${err.message}`);
@@ -3540,6 +3598,532 @@ bot.callbackQuery('report_search_again', async (ctx) => {
     parse_mode: 'HTML',
     reply_markup: new InlineKeyboard().text('❌ Cancel', 'report_cancel'),
   });
+});
+
+// Admin callback: Email Monthly Report PDF directly to Student via Resend
+bot.callbackQuery(/^rpt_email_([^_]+)_(\d+)_(\d+)$/, async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
+  await ctx.answerCallbackQuery({ text: 'Dispatching official report email...' });
+  const studentId = ctx.match[1];
+  const year = parseInt(ctx.match[2], 10);
+  const month = parseInt(ctx.match[3], 10);
+
+  try {
+    const student = await db.getStudentById(studentId);
+    if (!student) return ctx.reply('❌ Student profile not found.');
+
+    const reportData = await getMonthlyReportData(studentId, year, month);
+    const pdfBuffer = await buildMonthlyReportPdf(reportData);
+
+    const emailResult = await sendMonthlyReportEmail({
+      student,
+      reportData,
+      pdfBuffer,
+    });
+
+    await ctx.reply(`
+📧 <b>Monthly Study Report Dispatched!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Student:</b> ${student.full_name}
+📬 <b>Recipient:</b> <code>${emailResult.recipient}</code>
+📄 <b>File:</b> <code>${emailResult.filename}</code>
+${emailResult.sandbox ? '⚠️ <i>(Forwarded to Administrator mailbox in Resend test sandbox)</i>' : '✅ <i>Delivered via Resend Transactional Mail Service.</i>'}
+`, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error('Admin report email error:', err);
+    await ctx.reply(`❌ Failed to dispatch email: ${err.message}`);
+  }
+});
+
+// ==============================================================================
+// 8.6. Student Self-Service Report (/myreport & Student Lounge Menu)
+// ==============================================================================
+
+async function showStudentSelfReportYearSelection(ctx, student, edit = false) {
+  try {
+    const periods = await getStudentAvailableReportPeriods(student.id);
+    if (!periods || periods.length === 0) {
+      const emptyMsg = `
+ℹ️ <b>No Attendance Logs Found</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Hello <b>${student.full_name}</b>, you do not have any recorded study sessions yet.
+Once you check in at your desk, your monthly study statistics will appear here!
+`;
+      if (edit && ctx.callbackQuery) {
+        return safeEdit(ctx, emptyMsg, { parse_mode: 'HTML' });
+      }
+      return ctx.reply(emptyMsg, { parse_mode: 'HTML' });
+    }
+
+    const years = [...new Set(periods.map((p) => p.year))].sort((a, b) => b - a);
+
+    // If only 1 year on record, jump directly to month picker
+    if (years.length === 1) {
+      return await showStudentSelfReportMonthSelection(ctx, student, years[0], periods, edit, false);
+    }
+
+    const keyboard = new InlineKeyboard();
+    for (const y of years) {
+      const count = periods.filter((p) => p.year === y).length;
+      keyboard.text(`📅 Year ${y} (${count} month${count > 1 ? 's' : ''})`, `stu_rpt_yr_${student.id}_${y}`).row();
+    }
+    keyboard.text('🔙 Back to Lounge Menu', 'student_menu_refresh');
+
+    const text = `
+📄 <b>My Attendance & Study Audit</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${student.full_name}</b> (Desk: <b>${student.seat_number || 'Assigned'}</b>)
+🆔 Roll ID: <code>${student.id}</code>
+
+Select Year to view your monthly study report:
+`;
+
+    if (edit && ctx.callbackQuery) {
+      await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: keyboard });
+    } else {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error('showStudentSelfReportYearSelection error:', err);
+    await ctx.reply(`❌ Error loading attendance periods: ${err.message}`);
+  }
+}
+
+async function showStudentSelfReportMonthSelection(ctx, student, year, allPeriods = null, edit = false, showBackButton = true) {
+  try {
+    const periods = allPeriods || await getStudentAvailableReportPeriods(student.id);
+    const months = periods.filter((p) => p.year === year);
+
+    if (months.length === 0) {
+      return ctx.reply(`❌ No attendance sessions found for year ${year}.`, {
+        reply_markup: new InlineKeyboard().text('🔙 Back to Lounge Menu', 'student_menu_refresh'),
+      });
+    }
+
+    const keyboard = new InlineKeyboard();
+    const singleCol = months.length <= 4;
+    for (let i = 0; i < months.length; i++) {
+      const m = months[i];
+      const sessionText = m.sessions > 0 ? ` (${m.sessions} session${m.sessions > 1 ? 's' : ''})` : '';
+      const label = singleCol ? `📅 ${m.fullMonthName}${sessionText}` : `${m.monthName}${sessionText}`;
+      keyboard.text(label, `stu_rpt_gen_${student.id}_${year}_${m.month}`);
+      if (singleCol || (i + 1) % 2 === 0) keyboard.row();
+    }
+    if (!singleCol && months.length % 2 !== 0) keyboard.row();
+
+    if (showBackButton) {
+      keyboard.text('🔙 Pick Another Year', `stu_rpt_back_yr_${student.id}`).row();
+    }
+    keyboard.text('🔙 Back to Lounge Menu', 'student_menu_refresh');
+
+    const text = `
+📄 <b>My Attendance & Study Audit</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${student.full_name}</b> (Desk: <b>${student.seat_number || 'Assigned'}</b>)
+📅 <b>Year:</b> <b>${year}</b>
+
+👇 <b>Select Month to generate your official study report:</b>
+`;
+
+    if (edit && ctx.callbackQuery) {
+      await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: keyboard });
+    } else {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
+    }
+  } catch (err) {
+    console.error('showStudentSelfReportMonthSelection error:', err);
+    await ctx.reply(`❌ Error loading months: ${err.message}`);
+  }
+}
+
+async function handleStudentSelfReport(ctx, query = '') {
+  let student = studentChatMap.get(ctx.chat.id);
+
+  // 1. If query is provided, attempt lookup by phone or student ID
+  if (!student && query && query.trim()) {
+    const cleanQ = query.trim();
+    student = await db.findStudentByPhone(cleanQ);
+    if (!student) {
+      student = await db.getStudentById(cleanQ);
+    }
+  }
+
+  // 2. Check if chat ID is mapped to any past break record
+  if (!student) {
+    try {
+      const { data } = await db.supabase
+        .from('student_breaks')
+        .select('student_id')
+        .eq('telegram_chat_id', ctx.chat.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (data && data[0]?.student_id) {
+        student = await db.getStudentById(data[0].student_id);
+      }
+    } catch (e) {}
+  }
+
+  // 3. If user is an Admin, inform them of admin /report command
+  if (!student) {
+    const isAdmin = await db.isAdminChatId(ctx.chat.id);
+    if (isAdmin) {
+      return ctx.reply(`
+📊 <b>Administrator Notice:</b>
+You are accessing reports from an Admin account.
+To view any student's report, use <code>/report &lt;student name&gt;</code>.
+<i>Example: <code>/report Sarwar</code></i>
+`, { parse_mode: 'HTML' });
+    }
+
+    // 4. Prompt unverified student to share phone or roll ID
+    adminFlowState.set(ctx.chat.id, { action: 'awaiting_student_report_phone' });
+    const contactKb = new Keyboard()
+      .requestContact('📱 Tap to Verify Phone & View Report')
+      .oneTime()
+      .resized();
+
+    return ctx.reply(`
+📄 <b>My Attendance & Study Report</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+To view your personalized attendance logs and study hours, please verify your student account:
+
+👇 <b>Tap the button below to share your registered mobile number:</b>
+<i>(Or reply with your 10-digit phone number or Roll ID)</i>
+`, {
+      parse_mode: 'HTML',
+      reply_markup: contactKb,
+    });
+  }
+
+  // Cache resolved student
+  studentChatMap.set(ctx.chat.id, student);
+  studentToChatMap.set(student.id, ctx.chat.id);
+  return await showStudentSelfReportYearSelection(ctx, student, false);
+}
+
+// Student self-service report command
+bot.command(['myreport', 'my_report'], async (ctx) => {
+  const query = ctx.match?.trim() || '';
+  await handleStudentSelfReport(ctx, query);
+});
+
+// Student lounge button callback
+bot.callbackQuery('student_my_report', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await handleStudentSelfReport(ctx);
+});
+
+// Student self-service year picker
+bot.callbackQuery(/^stu_rpt_yr_([^_]+)_(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const studentId = ctx.match[1];
+  const year = parseInt(ctx.match[2], 10);
+  const student = await db.getStudentById(studentId);
+  if (!student) return ctx.reply('❌ Student not found.');
+  await showStudentSelfReportMonthSelection(ctx, student, year, null, true, true);
+});
+
+// Student self-service back to years
+bot.callbackQuery(/^stu_rpt_back_yr_([^_]+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const studentId = ctx.match[1];
+  const student = await db.getStudentById(studentId);
+  if (!student) return ctx.reply('❌ Student not found.');
+  await showStudentSelfReportYearSelection(ctx, student, true);
+});
+
+// Student self-service PDF report generator & delivery
+bot.callbackQuery(/^stu_rpt_gen_([^_]+)_(\d+)_(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Compiling your personal study report...' });
+  const studentId = ctx.match[1];
+  const year = parseInt(ctx.match[2], 10);
+  const month = parseInt(ctx.match[3], 10);
+
+  const student = await db.getStudentById(studentId);
+  if (!student) return ctx.reply('❌ Student not found.');
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const monthName = monthNames[month - 1];
+
+  await safeEdit(ctx, `
+⏳ <b>Compiling Your Study Report...</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${student.full_name}</b> &bull; ${monthName} ${year}
+Compiling punch logs, breaks, and peer rankings...
+`, { parse_mode: 'HTML' });
+
+  try {
+    const reportData = await getMonthlyReportData(studentId, year, month);
+    const pdfBuffer = await buildMonthlyReportPdf(reportData);
+
+    const cleanName = reportData.student.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `Monthly_Report_${cleanName}_${reportData.period.monthName}_${reportData.period.year}.pdf`;
+    const caption = `<b>${reportData.student.name}</b> • <b>${reportData.period.monthName} ${reportData.period.year}</b>\n📊 <i>Official Study & Attendance Audit Report</i>`;
+
+    // 1. Deliver PDF document directly to student
+    await bot.api.sendDocument(ctx.chat.id, new InputFile(pdfBuffer, filename), {
+      caption,
+      parse_mode: 'HTML',
+    });
+
+    // 2. Summary card with Email button
+    const summaryKb = new InlineKeyboard()
+      .text('📧 Email PDF to Me', `stu_rpt_email_${student.id}_${year}_${month}`)
+      .row()
+      .text('🔙 Back to Lounge Menu', 'student_menu_refresh');
+
+    await ctx.reply(`
+✅ <b>Your Monthly Study Report is Ready!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${student.full_name}</b> (Desk: <b>${reportData.student.desk}</b>)
+📅 <b>Period:</b> ${reportData.period.monthName} ${reportData.period.year}
+
+⏱ <b>Total Study:</b> <b>${reportData.metrics.totalNetFormatted}</b>
+📅 <b>Days Attended:</b> <b>${reportData.metrics.daysAttended} / ${reportData.metrics.daysInMonth}</b> (${reportData.metrics.attendanceRate}%)
+📈 <b>Daily Average:</b> <b>${reportData.metrics.avgDailyFormatted}</b>
+🏆 <b>Ranking Tier:</b> ${reportData.benchmark.tierBadge}
+💡 <i>${reportData.benchmark.headline}</i>
+
+📎 <i>Your full official audit PDF has been attached above.</i>
+`, {
+      parse_mode: 'HTML',
+      reply_markup: summaryKb,
+    });
+  } catch (err) {
+    console.error('Student self-report error:', err);
+    await ctx.reply(`❌ Failed to generate report: ${err.message}`);
+  }
+});
+
+// Student self-service: Email PDF to student's own email address
+bot.callbackQuery(/^stu_rpt_email_([^_]+)_(\d+)_(\d+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Dispatching report to your email...' });
+  const studentId = ctx.match[1];
+  const year = parseInt(ctx.match[2], 10);
+  const month = parseInt(ctx.match[3], 10);
+
+  try {
+    const student = await db.getStudentById(studentId);
+    if (!student) return ctx.reply('❌ Student not found.');
+
+    const reportData = await getMonthlyReportData(studentId, year, month);
+    const pdfBuffer = await buildMonthlyReportPdf(reportData);
+
+    const result = await sendMonthlyReportEmail({
+      student,
+      reportData,
+      pdfBuffer,
+    });
+
+    await ctx.reply(`
+📧 <b>Report Emailed Successfully!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your monthly report has been dispatched to:
+📬 <code>${result.recipient}</code>
+${result.sandbox ? '<i>(Forwarded to administrator mailbox in Resend test sandbox)</i>' : '<i>Delivered via Resend.</i>'}
+`, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error('Student report email error:', err);
+    await ctx.reply(`❌ Could not send email: ${err.message}`);
+  }
+});
+
+// ==============================================================================
+// 8.7. Automated Monthly Archival Cron & Admin Batch Runner
+// ==============================================================================
+
+async function archiveAllMonthlyReports({ year = null, month = null, targetChannelId = null, initiatedBy = 'System Cron' } = {}) {
+  const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  let targetYear = year;
+  let targetMonth = month;
+
+  if (!targetYear || !targetMonth) {
+    let prevMonth = nowIST.getMonth(); // 0 is January
+    let prevYear = nowIST.getFullYear();
+    if (prevMonth === 0) {
+      prevMonth = 12;
+      prevYear -= 1;
+    }
+    targetYear = targetYear || prevYear;
+    targetMonth = targetMonth || prevMonth;
+  }
+
+  const destChannel = targetChannelId || process.env.TELEGRAM_REPORT_CHANNEL_ID || ADMIN_CHAT_ID;
+  if (!destChannel) {
+    console.warn('[Archival] No TELEGRAM_REPORT_CHANNEL_ID configured, skipping archival.');
+    return { success: false, error: 'No report channel configured' };
+  }
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const monthName = monthNames[targetMonth - 1] || `Month ${targetMonth}`;
+
+  console.log(`[Monthly Archival] Starting archival for ${monthName} ${targetYear} to channel ${destChannel}...`);
+
+  const { data: students, error } = await db.supabase
+    .from('students')
+    .select('*')
+    .eq('status', 'active');
+
+  if (error || !students) {
+    throw new Error(`Failed to fetch students: ${error?.message}`);
+  }
+
+  let archivedCount = 0;
+  let skippedCount = 0;
+  const summaryList = [];
+
+  for (const student of students) {
+    try {
+      const periods = await getStudentAvailableReportPeriods(student.id);
+      const hasPeriod = periods.some((p) => p.year === targetYear && p.month === targetMonth);
+      if (!hasPeriod) {
+        skippedCount++;
+        continue;
+      }
+
+      const reportData = await getMonthlyReportData(student.id, targetYear, targetMonth);
+      if (!reportData.sessionDetails || reportData.sessionDetails.length === 0) {
+        skippedCount++;
+        continue;
+      }
+
+      const pdfBuffer = await buildMonthlyReportPdf(reportData);
+      await sendMonthlyReportToTelegram(bot, pdfBuffer, reportData, destChannel);
+
+      archivedCount++;
+      summaryList.push(`• <b>${student.full_name}</b> (${student.seat_number || 'Desk'}): ${reportData.metrics.totalNetFormatted} &bull; ${reportData.benchmark.tierBadge}`);
+      // Respect Telegram rate limits
+      await new Promise((r) => setTimeout(r, 1200));
+    } catch (err) {
+      console.warn(`[Archival] Failed for student ${student.full_name}:`, err.message);
+    }
+  }
+
+  // Post summary digest into the private archive channel
+  try {
+    const digestText = `
+🗄 <b>Monthly Attendance Archival Completed</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📅 <b>Period:</b> <b>${monthName} ${targetYear}</b>
+👥 <b>Archived Students:</b> <b>${archivedCount}</b> (${skippedCount} with no sessions)
+🚀 <b>Triggered By:</b> ${initiatedBy}
+
+<b>Summary Highlights:</b>
+${summaryList.slice(0, 15).join('\n') || '<i>No active student sessions logged this period.</i>'}
+${summaryList.length > 15 ? `<i>...and ${summaryList.length - 15} more students.</i>` : ''}
+
+🔒 <i>All audit PDFs cryptographically archived with tamper-resistant timestamps in DeskFlow Master Vault.</i>
+`;
+    await bot.api.sendMessage(destChannel, digestText, { parse_mode: 'HTML' });
+  } catch (digestErr) {
+    console.warn('[Archival] Failed to post archive digest:', digestErr.message);
+  }
+
+  console.log(`[Monthly Archival] Completed for ${monthName} ${targetYear}. Archived: ${archivedCount}, Skipped: ${skippedCount}`);
+  return { success: true, targetYear, targetMonth, monthName, archivedCount, skippedCount };
+}
+
+// Admin manual trigger to archive all student reports on demand (/archiveall [year] [month])
+bot.command(['archiveall', 'archive_all'], async (ctx) => {
+  if (!await ensureAdmin(ctx)) return;
+  const args = (ctx.match || '').trim().split(/\s+/).filter(Boolean);
+  let customYear = args[0] ? parseInt(args[0], 10) : null;
+  let customMonth = args[1] ? parseInt(args[1], 10) : null;
+
+  await ctx.reply(`
+⏳ <b>Initiating Monthly Archival Job...</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Processing all active student attendance records and dispatching PDFs to Private Telegram Channel...
+`, { parse_mode: 'HTML' });
+
+  try {
+    const result = await archiveAllMonthlyReports({
+      year: customYear,
+      month: customMonth,
+      initiatedBy: `Admin @${ctx.from?.username || ctx.from?.first_name || 'Admin'}`,
+    });
+
+    await ctx.reply(`
+✅ <b>Monthly Archival Finished!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📅 <b>Period:</b> ${result.monthName} ${result.targetYear}
+📁 <b>Archived Reports:</b> <b>${result.archivedCount}</b>
+⏭ <b>Skipped (No sessions):</b> ${result.skippedCount}
+🔒 All audit PDFs safely vaulted in Private Telegram Channel.
+`, { parse_mode: 'HTML' });
+  } catch (err) {
+    await ctx.reply(`❌ Archival failed: ${err.message}`);
+  }
+});
+
+// ==============================================================================
+// 8.8. Quick 1-Tap Check-Out (Triggered via Late-Evening Reminder Prompt)
+// ==============================================================================
+
+bot.callbackQuery(/^stu_quick_checkout_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery({ text: 'Processing your check-out...' });
+  const logId = ctx.match[1];
+
+  try {
+    const { data: log, error } = await db.supabase
+      .from('attendance_logs')
+      .select('*')
+      .eq('id', logId)
+      .maybeSingle();
+
+    if (error || !log) {
+      return ctx.reply('❌ Attendance record not found.');
+    }
+
+    if (log.status === 'checked_out') {
+      return ctx.reply('ℹ️ You have already been checked out for today.');
+    }
+
+    const now = new Date();
+    const checkInTime = new Date(log.check_in_time);
+    const diffMinutes = Math.max(1, Math.round((now.getTime() - checkInTime.getTime()) / 60000));
+    const hours = Math.floor(diffMinutes / 60);
+    const mins = diffMinutes % 60;
+    const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins} mins`;
+
+    await db.supabase
+      .from('attendance_logs')
+      .update({
+        check_out_time: now.toISOString(),
+        duration_minutes: diffMinutes,
+        status: 'checked_out',
+      })
+      .eq('id', log.id);
+
+    // End active break if any
+    await db.endStudentBreak({ studentId: log.student_id });
+
+    await ctx.reply(`
+👋 <b>Check-Out Confirmed!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${log.student_name}</b> (Desk: <b>${log.seat_number || 'Assigned'}</b>)
+🕒 <b>Check-Out Time:</b> ${getISTTime()} (IST)
+⏱ <b>Total Study Duration:</b> <b>${durationStr}</b>
+
+<i>Great study session today! See you tomorrow. 📚✨</i>
+`, {
+      parse_mode: 'HTML',
+      reply_markup: getStudentMenuKeyboard(),
+    });
+
+    await broadcastToAdmins(
+      `🔴 <b>[Check-Out via Reminder Prompt]</b>\n👤 <b>${log.student_name}</b> checked out from Desk <b>${log.seat_number || 'Flexi'}</b>.\n⏱ Studied: <b>${durationStr}</b>.`
+    );
+  } catch (err) {
+    console.error('Quick checkout error:', err);
+    await ctx.reply(`❌ Error checking out: ${err.message}`);
+  }
 });
 
 // ==============================================================================
@@ -3815,6 +4399,51 @@ app.get('/api/reports/available-periods', async (req, res) => {
   }
 });
 
+// Student Monthly Study & Attendance Report - Direct Email Dispatcher via Resend
+app.post('/api/reports/email-student', async (req, res) => {
+  const authHeader = req.headers['x-admin-token'] || req.headers['authorization'];
+  const internalProxy = req.headers['x-internal-proxy'];
+  const token = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
+  const admin = verifyAdminSessionToken(token);
+
+  if (!admin && !internalProxy) {
+    return res.status(401).json({ error: 'Authentication required. Valid admin token missing or expired.' });
+  }
+
+  const { studentId, year, month, email } = req.body;
+  if (!studentId) {
+    return res.status(400).json({ error: 'studentId is required' });
+  }
+
+  try {
+    const student = await db.getStudentById(studentId);
+    if (!student) {
+      return res.status(404).json({ error: 'Student profile not found' });
+    }
+
+    const reportData = await getMonthlyReportData(studentId, year, month);
+    const pdfBuffer = await buildMonthlyReportPdf(reportData);
+
+    const emailResult = await sendMonthlyReportEmail({
+      student,
+      reportData,
+      pdfBuffer,
+      customRecipient: email || null,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Monthly report email dispatched successfully.',
+      recipient: emailResult.recipient,
+      filename: emailResult.filename,
+      sandbox: emailResult.sandbox || false,
+    });
+  } catch (err) {
+    console.error('[Email Student Report Error]:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // Health check (no sensitive data exposed)
 app.get('/health', (req, res) => {
   res.json({
@@ -3896,9 +4525,24 @@ server.on('error', (e) => {
   }
 });
 
-// Background Service: Auto-reset expired student breaks (+5m grace period) & auto-close forgotten checkouts
+// Background Service: Auto-reset expired breaks (+5m grace), auto-close forgotten checkouts with student notice,
+// send late-evening checkout grace notifications, & trigger 1st-of-month automated archival cron
+let lastArchivedPeriodKey = '';
+let lastReminderDate = '';
+
 setInterval(async () => {
   try {
+    const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const istDateStr = getISTDateString();
+    const istHour = nowIST.getHours();
+    const istMin = nowIST.getMinutes();
+
+    // Reset daily reminder tracking on date change
+    if (lastReminderDate !== istDateStr) {
+      autoCheckoutRemindersSent.clear();
+      lastReminderDate = istDateStr;
+    }
+
     // 1. Auto-reset student breaks that exceeded grace period
     const expiredBreaks = await db.checkAndAutoResetExpiredBreaks();
     for (const brk of expiredBreaks) {
@@ -3919,8 +4563,90 @@ Welcome back to your studies! 📚✨
       }
     }
 
-    // 2. Auto-close stale attendance sessions from previous dates or exceeding 14 hours
-    await db.autoCloseStaleAttendanceSessions();
+    // 2. Auto-close stale attendance sessions from previous dates or exceeding 14 hours & notify student
+    const autoClosedSessions = await db.autoCloseStaleAttendanceSessions();
+    for (const session of autoClosedSessions) {
+      const chatId = await getStudentChatId(session.student_id);
+      if (chatId) {
+        try {
+          const hours = Math.floor((session.duration_minutes || 0) / 60);
+          const mins = (session.duration_minutes || 0) % 60;
+          await bot.api.sendMessage(chatId, `
+ℹ️ <b>Attendance Session Auto-Closed</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>${session.student_name}</b> (Desk: <b>${session.seat_number || 'Assigned'}</b>)
+📅 Date: ${session.date}
+
+Your session was automatically closed at your shift limit (${hours}h ${mins}m) so your study time was safely credited.
+
+Remember to tap <b>🚪 Check Out</b> when leaving the hall next time! 📚✨
+`, { parse_mode: 'HTML' });
+        } catch (e) {}
+      }
+    }
+
+    // 3. Live Auto-Checkout Grace Notifications (Late Evening 9:30 PM - 10:30 PM or >= 7 hours session)
+    const { logs } = await db.getTodayAttendance();
+    const activeSessions = (logs || []).filter((l) => l.status === 'checked_in');
+
+    for (const log of activeSessions) {
+      if (!log.check_in_time) continue;
+      const inTime = new Date(log.check_in_time);
+      const elapsedHours = (Date.now() - inTime.getTime()) / (3600 * 1000);
+
+      const isLateEvening = (istHour === 21 && istMin >= 30) || istHour >= 22;
+      const isLongSession = elapsedHours >= 7;
+
+      if ((isLateEvening || isLongSession) && !autoCheckoutRemindersSent.has(log.id)) {
+        const chatId = await getStudentChatId(log.student_id);
+        if (chatId) {
+          try {
+            const hours = Math.floor(elapsedHours);
+            const mins = Math.floor((elapsedHours - hours) * 60);
+            const promptKb = new InlineKeyboard()
+              .text('🚪 Check Out Now', `stu_quick_checkout_${log.id}`)
+              .row();
+
+            await bot.api.sendMessage(chatId, `
+🔔 <b>Gentle DeskFlow Reminder</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Hey <b>${log.student_name}</b>, you are currently marked as Checked In today at <b>${log.seat_number || 'Assigned Desk'}</b>.
+
+⏱ <b>Current Session:</b> ~${hours}h ${mins}m
+
+If you have packed up and left the study hall, tap below to check out and lock in your study hours:
+`, {
+              parse_mode: 'HTML',
+              reply_markup: promptKb,
+            });
+
+            autoCheckoutRemindersSent.add(log.id);
+            console.log(`[Auto-Checkout Grace Notification] Sent reminder prompt to ${log.student_name} (Chat ${chatId}).`);
+          } catch (e) {
+            console.warn(`[Auto-Checkout Grace Notification] Failed to notify ${log.student_name}:`, e.message);
+          }
+        }
+      }
+    }
+
+    // 4. Automated Monthly Archival Cron on the 1st of every month at 01:00 AM IST
+    if (nowIST.getDate() === 1 && istHour === 1) {
+      let prevMonth = nowIST.getMonth(); // 0 is January
+      let prevYear = nowIST.getFullYear();
+      if (prevMonth === 0) {
+        prevMonth = 12;
+        prevYear -= 1;
+      }
+      const periodKey = `${prevYear}_${prevMonth}`;
+      if (lastArchivedPeriodKey !== periodKey) {
+        lastArchivedPeriodKey = periodKey;
+        archiveAllMonthlyReports({
+          year: prevYear,
+          month: prevMonth,
+          initiatedBy: 'Automated 1st-of-Month Cron',
+        }).catch((e) => console.error('[Archival Cron Error]:', e.message));
+      }
+    }
   } catch (err) {
     console.error('Background maintenance error:', err.message);
   }
