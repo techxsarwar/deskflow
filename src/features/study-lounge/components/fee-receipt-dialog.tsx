@@ -401,9 +401,9 @@ export function FeeReceiptDialog({
               </div>
 
               {/* ITEMIZED LEDGER TABLE */}
-              <div className='border rounded-lg overflow-hidden'>
-                <table className='w-full text-xs text-left'>
-                  <thead className='bg-muted/70 border-b text-muted-foreground font-semibold uppercase text-[10px]'>
+              <div className='border rounded-lg overflow-x-auto'>
+                <table className='w-full min-w-[540px] text-xs text-left'>
+                  <thead className='bg-muted/70 border-b text-muted-foreground font-semibold uppercase text-[10px] whitespace-nowrap'>
                     <tr>
                       <th className='py-2.5 px-3.5'>#</th>
                       <th className='py-2.5 px-3.5'>Fee Particulars & Facilities</th>
@@ -429,16 +429,16 @@ export function FeeReceiptDialog({
                           </div>
                         )}
                       </td>
-                      <td className='py-3 px-3.5 text-right font-medium text-muted-foreground'>
+                      <td className='py-3 px-3.5 text-right font-medium text-muted-foreground whitespace-nowrap'>
                         ₹{planAmount.toLocaleString('en-IN')}
                       </td>
-                      <td className='py-3 px-3.5 text-right font-medium text-muted-foreground'>
+                      <td className='py-3 px-3.5 text-right font-medium text-muted-foreground whitespace-nowrap'>
                         ₹{Math.max(0, totalPaid - amountPaidThisTxn).toLocaleString('en-IN')}
                       </td>
-                      <td className='py-3 px-3.5 text-right font-extrabold text-emerald-600 dark:text-emerald-400 text-sm'>
+                      <td className='py-3 px-3.5 text-right font-extrabold text-emerald-600 dark:text-emerald-400 text-sm whitespace-nowrap'>
                         ₹{amountPaidThisTxn.toLocaleString('en-IN')}
                       </td>
-                      <td className='py-3 px-3.5 text-right font-bold text-sm'>
+                      <td className='py-3 px-3.5 text-right font-bold text-sm whitespace-nowrap'>
                         <span className={balanceDue > 0 ? 'text-destructive' : 'text-emerald-600'}>
                           ₹{balanceDue.toLocaleString('en-IN')}
                         </span>

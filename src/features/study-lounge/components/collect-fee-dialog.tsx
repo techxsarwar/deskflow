@@ -76,7 +76,7 @@ export function CollectFeeDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className='sm:max-w-md'>
+      <DialogContent className='sm:max-w-md max-h-[92vh] overflow-y-auto'>
         <DialogHeader>
           <div className='flex items-center gap-2 text-primary'>
             <div className='rounded-lg bg-primary/10 p-2'>

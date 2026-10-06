@@ -469,7 +469,7 @@ export function StudentFormDialog({
             <h4 className='text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3'>
               Membership Plan & Fee
             </h4>
-            <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+            <div className='grid grid-cols-1 sm:grid-cols-3 gap-3'>
               <div className='space-y-1.5'>
                 <Label>Membership Duration</Label>
                 <Select
@@ -491,29 +491,28 @@ export function StudentFormDialog({
                 </Select>
               </div>
 
-              <div className='grid grid-cols-2 gap-2'>
-                <div className='space-y-1.5'>
-                  <Label htmlFor='startDate'>Start Date</Label>
-                  <Input
-                    id='startDate'
-                    type='date'
-                    value={formData.startDate}
-                    onChange={(e) => handleStartDateChange(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className='space-y-1.5'>
-                  <Label htmlFor='endDate'>Expiry Date</Label>
-                  <Input
-                    id='endDate'
-                    type='date'
-                    value={formData.endDate}
-                    onChange={(e) =>
-                      setFormData((p) => ({ ...p, endDate: e.target.value }))
-                    }
-                    required
-                  />
-                </div>
+              <div className='space-y-1.5'>
+                <Label htmlFor='startDate'>Start Date</Label>
+                <Input
+                  id='startDate'
+                  type='date'
+                  value={formData.startDate}
+                  onChange={(e) => handleStartDateChange(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className='space-y-1.5'>
+                <Label htmlFor='endDate'>Expiry Date</Label>
+                <Input
+                  id='endDate'
+                  type='date'
+                  value={formData.endDate}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, endDate: e.target.value }))
+                  }
+                  required
+                />
               </div>
             </div>
 
@@ -551,7 +550,7 @@ export function StudentFormDialog({
             </div>
           </div>
 
-          <DialogFooter className='pt-2'>
+          <DialogFooter className='sticky bottom-0 -mx-6 -mb-6 p-4 bg-background/95 backdrop-blur-xs border-t z-10 flex-row justify-end gap-2'>
             <Button
               type='button'
               variant='outline'

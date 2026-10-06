@@ -462,9 +462,9 @@ export function StudentMonthlyReportDialog({
                 </div>
 
                 <div className='rounded-xl border overflow-hidden shadow-2xs'>
-                  <div className='max-h-64 overflow-y-auto'>
-                    <table className='w-full text-left text-xs'>
-                      <thead className='bg-muted/80 sticky top-0 text-[11px] font-semibold text-muted-foreground uppercase border-b'>
+                  <div className='max-h-64 overflow-y-auto overflow-x-auto'>
+                    <table className='w-full min-w-[620px] text-left text-xs'>
+                      <thead className='bg-muted/80 sticky top-0 text-[11px] font-semibold text-muted-foreground uppercase border-b whitespace-nowrap'>
                         <tr>
                           <th className='py-2 px-3'>#</th>
                           <th className='py-2 px-3'>Date</th>
@@ -521,16 +521,17 @@ export function StudentMonthlyReportDialog({
         </div>
 
         {/* Footer Actions */}
-        <div className='p-4 border-t bg-card flex flex-wrap items-center justify-between gap-3'>
-          <p className='text-[11px] text-muted-foreground hidden sm:block'>
+        <div className='p-3 sm:p-4 border-t bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-2.5'>
+          <p className='text-[11px] text-muted-foreground hidden lg:block'>
             Stored with cryptographically verified GPS telemetry in DeskFlow OS.
           </p>
 
-          <div className='flex items-center gap-2 ms-auto'>
+          <div className='flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto'>
             <Button
               type='button'
               variant='outline'
               size='sm'
+              className='h-8 text-xs'
               onClick={() => onOpenChange(false)}
             >
               Close
@@ -540,31 +541,31 @@ export function StudentMonthlyReportDialog({
               type='button'
               variant='outline'
               size='sm'
-              className='gap-1.5'
+              className='gap-1.5 h-8 text-xs'
               disabled={isLoading || !pdfBase64}
               onClick={handleDownloadPdf}
             >
               <Download className='h-3.5 w-3.5' />
-              Download PDF
+              <span><span className='hidden sm:inline'>Download </span>PDF</span>
             </Button>
 
             <Button
               type='button'
               variant='outline'
               size='sm'
-              className='gap-1.5'
+              className='gap-1.5 h-8 text-xs'
               disabled={isLoading || isSendingEmail || !reportData}
               onClick={handleSendEmail}
             >
               {isSendingEmail ? (
                 <>
                   <Loader2 className='h-3.5 w-3.5 animate-spin' />
-                  Sending Email...
+                  <span>Sending...</span>
                 </>
               ) : (
                 <>
                   <Mail className='h-3.5 w-3.5' />
-                  Email to Student
+                  <span><span className='hidden sm:inline'>Email </span>to Student</span>
                 </>
               )}
             </Button>
@@ -572,19 +573,19 @@ export function StudentMonthlyReportDialog({
             <Button
               type='button'
               size='sm'
-              className='gap-1.5 bg-primary font-semibold'
+              className='gap-1.5 bg-primary font-semibold h-8 text-xs'
               disabled={isLoading || isSendingTelegram || !reportData}
               onClick={handleSendTelegram}
             >
               {isSendingTelegram ? (
                 <>
                   <Loader2 className='h-3.5 w-3.5 animate-spin' />
-                  Uploading to Telegram...
+                  <span>Uploading...</span>
                 </>
               ) : (
                 <>
                   <Send className='h-3.5 w-3.5' />
-                  Send to Private Telegram Channel
+                  <span><span className='hidden sm:inline'>Send to </span>Telegram<span className='hidden md:inline'> Channel</span></span>
                 </>
               )}
             </Button>

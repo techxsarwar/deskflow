@@ -63,9 +63,9 @@ export function StudentDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='sm:max-w-lg'>
-        <DialogHeader>
-          <div className='flex items-center justify-between'>
+      <DialogContent className='sm:max-w-lg max-h-[92vh] overflow-y-auto'>
+        <DialogHeader className='pr-6'>
+          <div className='flex flex-wrap items-center justify-between gap-2'>
             <DialogTitle>Student Profile & ID Card</DialogTitle>
             <div className='flex items-center gap-1.5'>
               <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full border ${lifecycle.badgeColor}`}>
@@ -206,47 +206,73 @@ export function StudentDetailsDialog({
           </div>
 
           {/* Action Buttons */}
-          <div className='flex flex-wrap items-center justify-between gap-2 pt-2 border-t'>
-            <Button
-              type='button'
-              variant='outline'
-              size='sm'
-              className='gap-1.5'
-              onClick={handleWhatsApp}
-            >
-              <Phone className='h-3.5 w-3.5 text-emerald-600' />
-              Message on WhatsApp
-            </Button>
+          <div className='space-y-2.5 pt-3 border-t'>
+            {/* Primary Action Button (if actionable) */}
+            {student.status === 'pending' && onApprove ? (
+              <Button
+                className='w-full bg-emerald-600 hover:bg-emerald-700 text-white gap-2 font-semibold shadow-xs text-xs sm:text-sm h-9'
+                onClick={() => {
+                  onOpenChange(false)
+                  onCollectFee ? onCollectFee(student) : onApprove(student)
+                }}
+              >
+                <CheckCircle2 className='h-4 w-4' />
+                Verify Admission & Collect Fee
+              </Button>
+            ) : student.amountDue > 0 && onCollectFee ? (
+              <Button
+                className='w-full gap-2 font-semibold shadow-xs text-xs sm:text-sm h-9'
+                onClick={() => {
+                  onOpenChange(false)
+                  onCollectFee(student)
+                }}
+              >
+                <IndianRupee className='h-4 w-4' />
+                Collect Pending Due (₹{student.amountDue.toLocaleString('en-IN')})
+              </Button>
+            ) : null}
 
-            {onOpenMonthlyReport && (
+            {/* Secondary Action Grid */}
+            <div className='grid grid-cols-2 gap-2'>
               <Button
                 type='button'
                 variant='outline'
                 size='sm'
-                className='gap-1.5 border-primary/30 text-primary hover:bg-primary/10'
-                onClick={() => {
-                  onOpenChange(false)
-                  onOpenMonthlyReport(student)
-                }}
+                className='gap-1.5 justify-center text-xs h-8.5'
+                onClick={handleWhatsApp}
               >
-                <FileText className='h-3.5 w-3.5' />
-                Monthly Audit PDF
+                <Phone className='h-3.5 w-3.5 text-emerald-600 shrink-0' />
+                <span className='truncate'>WhatsApp</span>
               </Button>
-            )}
 
-            <div className='flex flex-wrap items-center gap-2'>
+              {onOpenMonthlyReport && (
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  className='gap-1.5 justify-center border-primary/30 text-primary hover:bg-primary/10 text-xs h-8.5'
+                  onClick={() => {
+                    onOpenChange(false)
+                    onOpenMonthlyReport(student)
+                  }}
+                >
+                  <FileText className='h-3.5 w-3.5 shrink-0' />
+                  <span className='truncate'>Audit PDF</span>
+                </Button>
+              )}
+
               {onRenew && (
                 <Button
                   size='sm'
                   variant='outline'
-                  className='gap-1.5 text-primary border-primary/30 hover:bg-primary/10'
+                  className='gap-1.5 justify-center text-primary border-primary/30 hover:bg-primary/10 text-xs h-8.5'
                   onClick={() => {
                     onOpenChange(false)
                     onRenew(student)
                   }}
                 >
-                  <RefreshCw className='h-3.5 w-3.5' />
-                  Renew (+1 Mo)
+                  <RefreshCw className='h-3.5 w-3.5 shrink-0' />
+                  <span className='truncate'>Renew (+1 Mo)</span>
                 </Button>
               )}
 
@@ -254,42 +280,14 @@ export function StudentDetailsDialog({
                 <Button
                   size='sm'
                   variant='outline'
-                  className='gap-1.5 text-amber-600 border-amber-500/40 hover:bg-amber-500/10'
+                  className='gap-1.5 justify-center text-amber-600 border-amber-500/40 hover:bg-amber-500/10 text-xs h-8.5'
                   onClick={() => {
                     onOpenChange(false)
                     onReleaseSeat(student)
                   }}
                 >
-                  <Armchair className='h-3.5 w-3.5' />
-                  Release Desk
-                </Button>
-              )}
-
-              {student.status === 'pending' && onApprove && (
-                <Button
-                  size='sm'
-                  className='bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5'
-                  onClick={() => {
-                    onOpenChange(false)
-                    onCollectFee ? onCollectFee(student) : onApprove(student)
-                  }}
-                >
-                  <CheckCircle2 className='h-4 w-4' />
-                  Verify & Pay
-                </Button>
-              )}
-
-              {student.amountDue > 0 && onCollectFee && student.status !== 'pending' && (
-                <Button
-                  size='sm'
-                  className='gap-1.5'
-                  onClick={() => {
-                    onOpenChange(false)
-                    onCollectFee(student)
-                  }}
-                >
-                  <IndianRupee className='h-4 w-4' />
-                  Collect Due (₹{student.amountDue})
+                  <Armchair className='h-3.5 w-3.5 shrink-0' />
+                  <span className='truncate'>Release Desk</span>
                 </Button>
               )}
             </div>

@@ -153,7 +153,7 @@ export function StudentsTable() {
   return (
     <div className='space-y-4'>
       {/* Top Stat Cards */}
-      <div className='grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-4 gap-3'>
+      <div className='grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-3'>
         <Card>
           <CardContent className='p-4'>
             <p className='text-xs font-medium text-muted-foreground'>Total Enrolled</p>
@@ -266,8 +266,8 @@ export function StudentsTable() {
 
       {/* Action Controls & Filters */}
       <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
-        <div className='flex flex-1 flex-col min-[480px]:flex-row flex-wrap items-stretch min-[480px]:items-center gap-2'>
-          <div className='relative flex-1 min-w-[200px]'>
+        <div className='flex flex-1 flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2'>
+          <div className='relative flex-1 min-w-[180px]'>
             <Search className='absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground' />
             <Input
               placeholder='Search by name, phone, desk...'
@@ -277,9 +277,9 @@ export function StudentsTable() {
             />
           </div>
 
-          <div className='grid grid-cols-3 gap-2 w-full min-[480px]:w-auto min-[480px]:flex min-[480px]:flex-wrap'>
+          <div className='grid grid-cols-1 min-[420px]:grid-cols-3 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto'>
             <Select value={shiftFilter} onValueChange={setShiftFilter}>
-              <SelectTrigger className='w-full min-[480px]:w-[115px] sm:w-[130px] h-9 text-xs'>
+              <SelectTrigger className='w-full sm:w-[130px] h-9 text-xs'>
                 <SelectValue placeholder='Shift' />
               </SelectTrigger>
               <SelectContent>
@@ -293,7 +293,7 @@ export function StudentsTable() {
             </Select>
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className='w-full min-[480px]:w-[115px] sm:w-[130px] h-9 text-xs'>
+              <SelectTrigger className='w-full sm:w-[130px] h-9 text-xs'>
                 <SelectValue placeholder='Status' />
               </SelectTrigger>
               <SelectContent>
@@ -305,7 +305,7 @@ export function StudentsTable() {
             </Select>
 
             <Select value={paymentFilter} onValueChange={setPaymentFilter}>
-              <SelectTrigger className='w-full min-[480px]:w-[115px] sm:w-[130px] h-9 text-xs'>
+              <SelectTrigger className='w-full sm:w-[130px] h-9 text-xs'>
                 <SelectValue placeholder='Fee Status' />
               </SelectTrigger>
               <SelectContent>
@@ -341,9 +341,9 @@ export function StudentsTable() {
       </div>
 
       {/* Students Data Table */}
-      <div className='rounded-md border bg-card'>
+      <div className='rounded-md border bg-card shadow-xs'>
         <div className='overflow-x-auto'>
-          <table className='w-full text-sm text-left'>
+          <table className='w-full text-sm text-left border-collapse'>
             <thead className='bg-muted/50 border-b text-xs uppercase text-muted-foreground'>
               <tr>
                 <th className='py-3 px-4 min-w-[200px] whitespace-nowrap'>Student</th>
@@ -352,7 +352,7 @@ export function StudentsTable() {
                 <th className='py-3 px-4 min-w-[160px] whitespace-nowrap'>Membership & Validity</th>
                 <th className='py-3 px-4 min-w-[120px] whitespace-nowrap'>Fee Status</th>
                 <th className='py-3 px-4 min-w-[100px] whitespace-nowrap'>Status</th>
-                <th className='py-3 px-4 min-w-[80px] text-right whitespace-nowrap'>Actions</th>
+                <th className='py-3 px-4 min-w-[80px] text-right whitespace-nowrap sticky right-0 bg-muted/95 backdrop-blur-xs z-10 border-l border-border/40 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]'>Actions</th>
               </tr>
             </thead>
             <tbody className='divide-y'>
@@ -371,7 +371,7 @@ export function StudentsTable() {
                   return (
                     <tr
                       key={student.id}
-                      className='hover:bg-muted/40 transition-colors cursor-pointer'
+                      className='group hover:bg-muted/40 transition-colors cursor-pointer'
                       onClick={() => {
                         setSelectedStudent(student)
                         setDetailsOpen(true)
@@ -527,7 +527,7 @@ export function StudentsTable() {
 
                       {/* Actions */}
                       <td
-                        className='py-3 px-4 text-right'
+                        className='py-3 px-4 text-right sticky right-0 bg-card group-hover:bg-muted/40 z-10 border-l border-border/40 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] transition-colors'
                         onClick={(e) => e.stopPropagation()}
                       >
                         <DropdownMenu>
