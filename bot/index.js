@@ -189,7 +189,6 @@ function getStudentMenuKeyboard() {
     .text('🚻 Take Restroom Break', 'student_break_guide')
     .text('🟢 Back at My Desk', 'student_back_guide')
     .row()
-    .text('🗺 Seating Floor Plan', 'layout_view_default')
     .text('🤫 Anonymous Complaint', 'complaint_start')
     .row()
     .text('📄 My Attendance Report', 'student_my_report')
@@ -213,7 +212,6 @@ Manage your attendance, restroom / study breaks, and Wi-Fi access below:
 • <code>/checkout</code> — Share phone number to record study hours
 • <code>/break</code> — Take 10m, 15m, or custom study break
 • <code>/back</code> — Tap when back at your desk
-• <code>/layout</code> — View visual seating floor plan & vacant desks
 • <code>/complaint</code> — Submit anonymous quiet hall report (Noise/AC/Wi-Fi)
 • <code>/myreport</code> — View your monthly study hours & attendance audit
 • <code>/check</code> — View your live desk & presence status
@@ -474,7 +472,6 @@ async function getMainMenuKeyboard(radius) {
     }
   }
   const kb = new InlineKeyboard()
-    .text('🗺 Seating Floor Plan', 'layout_view_default')
     .text('🪑 Desk Details', 'menu_desks')
     .row()
     .text('👥 Students', 'menu_students')
@@ -657,10 +654,6 @@ bot.command(['announce', 'broadcast'], async (ctx) => {
   await renderAnnouncementMenu(ctx, false);
 });
 
-// Seating Floor Plan commands
-bot.command(['layout', 'floorplan', 'seats', 'desks', 'seatplan'], async (ctx) => {
-  await renderTelegramFloorPlan(ctx, null, false);
-});
 
 // Anonymous Student Complaint / Noise Report commands
 bot.command(['complaint', 'noise', 'report', 'complain'], async (ctx) => {
@@ -1784,163 +1777,6 @@ bot.callbackQuery(/^seat_vacate_(.+)$/, async (ctx) => {
   }
 });
 
-// ==============================================================================
-// 3B. Visual Seating Floor Plan (Telegram ASCII Layout)
-// ==============================================================================
-
-async function renderTelegramFloorPlan(ctx, targetHallName, edit = false) {
-  try {
-    const seats = await db.getAllSeats();
-
-    // Separate into halls
-    const hallA = seats.filter(s => (s.section || '').toLowerCase().includes('hall') || (s.seat_number || '').startsWith('D'));
-    const hallB = seats.filter(s => (s.section || '').toLowerCase().includes('flexi') || (s.section || '').toLowerCase().includes('zone b') || (s.seat_number || '').startsWith('F'));
-
-    // Decide which hall to show
-    const showHall = targetHallName || 'all';
-
-    // Emoji map
-    const icon = (seat) => seat.status === 'occupied' ? '🔴' : '🟢';
-    const pad = (num) => String(num).padStart(2, '0');
-
-    // Build Hall A floor plan (D-01 to D-20): 4 rows × 5 desks per side with central aisle
-    let planA = '';
-    if (showHall === 'all' || showHall === 'halla') {
-      planA += `\n🏛 <b>Main Silent Hall A</b>  (D-01 → D-20)\n`;
-      planA += `┌─────────────────────────────────────┐\n`;
-
-      // Sort hall A seats by number
-      const sortedA = hallA.sort((a, b) => {
-        const na = parseInt((a.seat_number || '').replace(/\D/g, ''), 10) || 0;
-        const nb = parseInt((b.seat_number || '').replace(/\D/g, ''), 10) || 0;
-        return na - nb;
-      });
-
-      // Build a map for quick lookup
-      const seatMapA = {};
-      for (const s of sortedA) {
-        const num = parseInt((s.seat_number || '').replace(/\D/g, ''), 10);
-        if (num) seatMapA[num] = s;
-      }
-
-      // Layout: 4 rows, each row has Left Bay (5 desks) + Aisle + Right Bay (5 desks)
-      // Row 1: D-01..D-05  |  D-06..D-10
-      // Row 2: D-11..D-15  |  D-16..D-20
-      const rows = [
-        { left: [1, 2, 3, 4, 5], right: [6, 7, 8, 9, 10] },
-        { left: [11, 12, 13, 14, 15], right: [16, 17, 18, 19, 20] },
-      ];
-
-      for (const row of rows) {
-        let line = '│ ';
-        for (const n of row.left) {
-          if (seatMapA[n]) {
-            line += `${icon(seatMapA[n])}${pad(n)} `;
-          } else {
-            line += `⬜${pad(n)} `;
-          }
-        }
-        line += ' 🚶 ';
-        for (const n of row.right) {
-          if (seatMapA[n]) {
-            line += `${icon(seatMapA[n])}${pad(n)} `;
-          } else {
-            line += `⬜${pad(n)} `;
-          }
-        }
-        planA += line.trimEnd() + ' │\n';
-      }
-
-      planA += `└─────────────────────────────────────┘\n`;
-    }
-
-    // Build Hall B floor plan (F-01 to F-10): 2 rows × 5 desks each
-    let planB = '';
-    if (showHall === 'all' || showHall === 'hallb') {
-      planB += `\n📖 <b>Flexi Open Zone B</b>  (F-01 → F-10)\n`;
-      planB += `┌─────────────────────────────────────┐\n`;
-
-      const sortedB = hallB.sort((a, b) => {
-        const na = parseInt((a.seat_number || '').replace(/\D/g, ''), 10) || 0;
-        const nb = parseInt((b.seat_number || '').replace(/\D/g, ''), 10) || 0;
-        return na - nb;
-      });
-
-      const seatMapB = {};
-      for (const s of sortedB) {
-        const num = parseInt((s.seat_number || '').replace(/\D/g, ''), 10);
-        if (num) seatMapB[num] = s;
-      }
-
-      const rowsB = [
-        { desks: [1, 2, 3, 4, 5] },
-        { desks: [6, 7, 8, 9, 10] },
-      ];
-
-      for (const row of rowsB) {
-        let line = '│ ';
-        for (const n of row.desks) {
-          if (seatMapB[n]) {
-            line += `${icon(seatMapB[n])}F${pad(n)} `;
-          } else {
-            line += `⬜F${pad(n)} `;
-          }
-        }
-        planB += line.trimEnd() + '           │\n';
-      }
-
-      planB += `└─────────────────────────────────────┘\n`;
-    }
-
-    // Stats
-    const total = seats.length;
-    const occupied = seats.filter(s => s.status === 'occupied').length;
-    const available = total - occupied;
-
-    let text = `🗺 <b>Seating Floor Plan — Live View</b>\n`;
-    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    text += `🟢 Vacant (${available})  •  🔴 Occupied (${occupied})  •  ⬜ Gap  •  🚶 Aisle\n`;
-    text += planA;
-    text += planB;
-    text += `\n📊 <b>Occupancy:</b> ${occupied}/${total} desks (${total > 0 ? Math.round((occupied / total) * 100) : 0}%)\n`;
-    text += `\n<i>🔄 Tap Refresh to see real-time updates</i>`;
-
-    const kb = new InlineKeyboard()
-      .text('🏛 Hall A Only', 'layout_hall_halla')
-      .text('📖 Zone B Only', 'layout_hall_hallb')
-      .row()
-      .text('🗺 Full Layout', 'layout_view_default')
-      .text('🔄 Refresh', 'layout_view_default')
-      .row();
-
-    if (WEB_APP_URL) {
-      kb.webApp('🚀 Open Full WebApp', WEB_APP_URL).row();
-    }
-
-    kb.text('🔙 Back to Menu', 'menu_main');
-
-    if (edit && ctx.callbackQuery) {
-      await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
-    } else {
-      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
-    }
-  } catch (err) {
-    console.error('Floor plan error:', err);
-    await ctx.reply(`❌ Failed to load floor plan: ${err.message}`);
-  }
-}
-
-// Floor Plan callback handlers
-bot.callbackQuery('layout_view_default', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  await renderTelegramFloorPlan(ctx, null, true);
-});
-
-bot.callbackQuery(/^layout_hall_(.+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery();
-  const hall = ctx.match[1];
-  await renderTelegramFloorPlan(ctx, hall, true);
-});
 
 // ==============================================================================
 // 3C. Anonymous Noise & Hall Complaint Box
