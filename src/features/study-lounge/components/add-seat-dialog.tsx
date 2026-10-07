@@ -160,22 +160,24 @@ export function AddSeatDialog({
         </DialogTrigger>
       )}
 
-      <DialogContent className='sm:max-w-lg'>
-        <DialogHeader>
+      <DialogContent className='sm:max-w-lg max-h-[92vh] overflow-y-auto w-full'>
+        <DialogHeader className='space-y-1.5'>
           <div className='flex items-center gap-2 text-primary'>
-            <Building2 className='h-5 w-5' />
-            <DialogTitle>Add Private Desks by Hall Name</DialogTitle>
+            <div className='p-1.5 rounded-lg bg-primary/10 text-primary'>
+              <Building2 className='h-5 w-5' />
+            </div>
+            <DialogTitle className='text-lg font-bold'>Add Private Desks by Hall Name</DialogTitle>
           </div>
-          <DialogDescription>
-            Enter Hall Name (e.g., Black Hall, Brown Hall) and specify the serial number range from where to where.
+          <DialogDescription className='text-xs sm:text-sm text-muted-foreground leading-relaxed'>
+            Enter Hall Name (e.g., Black Hall, Brown Hall) and specify the serial number range to create multiple desks at once.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className='space-y-4 pt-2'>
+        <form onSubmit={handleSubmit} className='space-y-4 pt-1 w-full min-w-0'>
           {/* Hall Name Input + Quick Selector */}
-          <div className='space-y-2'>
+          <div className='space-y-2 min-w-0'>
             <Label htmlFor='hall-name' className='text-xs font-semibold'>
-              Hall Name *
+              Hall Name <span className='text-destructive'>*</span>
             </Label>
             <Input
               id='hall-name'
@@ -183,16 +185,16 @@ export function AddSeatDialog({
               onChange={(e) => setHallName(e.target.value)}
               placeholder='e.g., Black Hall, Brown Hall'
               required
-              className='font-bold text-sm'
+              className='font-bold text-sm bg-background'
             />
             {existingHalls.length > 0 && (
-              <div className='flex flex-wrap items-center gap-1.5 pt-1'>
-                <span className='text-[11px] text-muted-foreground me-1'>Existing Halls:</span>
+              <div className='flex flex-wrap items-center gap-1.5 pt-1 min-w-0'>
+                <span className='text-[11px] text-muted-foreground shrink-0'>Existing Halls:</span>
                 {existingHalls.map((hall) => (
                   <Badge
                     key={hall}
                     variant={hallName === hall ? 'default' : 'outline'}
-                    className='cursor-pointer text-[10px] px-2.5 py-0.5 select-none hover:opacity-80 transition-all'
+                    className='cursor-pointer text-[10px] px-2.5 py-0.5 select-none hover:opacity-80 transition-all font-medium'
                     onClick={() => setHallName(hall)}
                   >
                     {hall}
@@ -203,16 +205,23 @@ export function AddSeatDialog({
           </div>
 
           {/* Serial Number Range: From ... To ... */}
-          <div className='space-y-3 p-4 rounded-xl border bg-muted/20'>
-            <div className='flex items-center gap-1.5 text-xs font-bold text-foreground'>
-              <Hash className='h-4 w-4 text-primary' />
-              Enter Serial No. (From Where To Where)
+          <div className='space-y-3 p-3.5 sm:p-4 rounded-xl border bg-muted/30 min-w-0'>
+            <div className='flex items-center justify-between gap-2 min-w-0'>
+              <div className='flex items-center gap-1.5 text-xs font-bold text-foreground'>
+                <Hash className='h-4 w-4 text-primary shrink-0' />
+                <span>Enter Serial No. (From Where To Where)</span>
+              </div>
+              {toSerial >= fromSerial && (
+                <Badge variant='secondary' className='text-[10px] font-mono shrink-0'>
+                  {toSerial - fromSerial + 1} Selected
+                </Badge>
+              )}
             </div>
 
-            <div className='grid grid-cols-2 gap-3'>
-              <div className='space-y-1.5'>
+            <div className='grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0'>
+              <div className='space-y-1.5 min-w-0'>
                 <Label htmlFor='from-serial' className='text-xs font-medium'>
-                  From Serial No. *
+                  From Serial No. <span className='text-destructive'>*</span>
                 </Label>
                 <Input
                   id='from-serial'
@@ -220,58 +229,96 @@ export function AddSeatDialog({
                   min={1}
                   value={fromSerial}
                   onChange={(e) => setFromSerial(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className='font-mono font-bold text-base h-10'
+                  className='font-mono font-bold text-sm sm:text-base h-10 bg-background'
                   required
                 />
               </div>
 
-              <div className='space-y-1.5'>
+              <div className='space-y-1.5 min-w-0'>
                 <Label htmlFor='to-serial' className='text-xs font-medium'>
-                  To Serial No. *
+                  To Serial No. <span className='text-destructive'>*</span>
                 </Label>
                 <Input
                   id='to-serial'
                   type='number'
                   min={fromSerial}
                   value={toSerial}
-                  onChange={(e) => setToSerial(Math.max(fromSerial, parseInt(e.target.value, 10) || fromSerial))}
-                  className='font-mono font-bold text-base h-10'
+                  onChange={(e) => setToSerial(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  className='font-mono font-bold text-sm sm:text-base h-10 bg-background'
                   required
                 />
               </div>
             </div>
 
+            {toSerial < fromSerial && (
+              <p className='text-xs font-medium text-destructive pt-1'>
+                "To Serial No." must be greater than or equal to "From Serial No."
+              </p>
+            )}
+
             {/* Live Preview Box */}
-            <div className='rounded-lg bg-background border p-3 space-y-1.5 shadow-2xs'>
-              <div className='flex items-center justify-between'>
+            <div className='rounded-lg bg-background border p-3 space-y-2 shadow-2xs min-w-0 overflow-hidden'>
+              <div className='flex items-center justify-between gap-2'>
                 <span className='text-[10px] font-bold uppercase tracking-wider text-muted-foreground'>
                   Generation Summary
                 </span>
                 <Badge variant='outline' className='text-[10px] font-mono font-bold text-primary'>
-                  {totalToCreate} Private Desk{totalToCreate > 1 ? 's' : ''}
+                  {totalToCreate} Private Desk{totalToCreate !== 1 ? 's' : ''}
                 </Badge>
               </div>
-              <p className='text-xs font-semibold text-foreground'>
-                Will add <span className='text-primary font-bold'>{totalToCreate} Desks</span> (Desk {fromSerial} to Desk {toSerial}) under <span className='font-bold text-primary'>{hallName || 'Hall'}</span>.
+
+              <p className='text-xs font-semibold text-foreground leading-normal break-words'>
+                Will add <span className='text-primary font-bold'>{totalToCreate} Desks</span>{' '}
+                {totalToCreate > 0 ? (
+                  <>
+                    (<span className='font-mono'>Desk {fromSerial}</span> to{' '}
+                    <span className='font-mono'>Desk {toSerial}</span>)
+                  </>
+                ) : null}{' '}
+                under <span className='font-bold text-primary'>{hallName.trim() || 'Hall'}</span>.
               </p>
-              <div className='pt-1 text-[11px] text-muted-foreground font-mono truncate'>
-                Preview: {generatedDesks.slice(0, 8).map((d) => d.label).join(', ')}
-                {generatedDesks.length > 8 ? ` ... and ${generatedDesks.length - 8} more (${generatedDesks[generatedDesks.length - 1].label})` : ''}
-              </div>
+
+              {generatedDesks.length > 0 && (
+                <div className='pt-1 space-y-1.5 min-w-0'>
+                  <div className='text-[10px] uppercase font-bold text-muted-foreground tracking-wider'>
+                    Desk Preview:
+                  </div>
+                  <div className='flex flex-wrap gap-1.5 max-h-24 overflow-y-auto min-w-0 p-0.5'>
+                    {generatedDesks.slice(0, 10).map((d) => (
+                      <span
+                        key={d.serial}
+                        className='inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-muted text-foreground border border-border/60 select-none'
+                      >
+                        {d.label}
+                      </span>
+                    ))}
+                    {generatedDesks.length > 10 && (
+                      <span className='inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-primary/10 text-primary border border-primary/20 select-none'>
+                        +{generatedDesks.length - 10} more ({generatedDesks[generatedDesks.length - 1].label})
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className='flex justify-end gap-2 pt-3 border-t'>
+          <div className='flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3 border-t min-w-0'>
             <Button
               type='button'
               variant='outline'
               onClick={() => setOpen(false)}
+              className='w-full sm:w-auto'
             >
               Cancel
             </Button>
-            <Button type='submit' className='gap-1.5'>
+            <Button
+              type='submit'
+              className='gap-1.5 font-semibold w-full sm:w-auto'
+              disabled={totalToCreate === 0 || toSerial < fromSerial || !hallName.trim()}
+            >
               <CheckCircle2 className='h-4 w-4' />
-              Add {totalToCreate} Desks to {hallName || 'Hall'}
+              Add {totalToCreate} Desks to {hallName.trim() || 'Hall'}
             </Button>
           </div>
         </form>

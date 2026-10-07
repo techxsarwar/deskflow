@@ -291,7 +291,7 @@ export function SeatsLayoutView() {
 
       {/* Seat Detail / Assignment Modal */}
       <Dialog open={assignStudentModalOpen} onOpenChange={setAssignStudentModalOpen}>
-        <DialogContent className='sm:max-w-md'>
+        <DialogContent className='sm:max-w-md max-h-[92vh] overflow-y-auto'>
           <DialogHeader>
             <DialogTitle className='flex items-center gap-2'>
               <Armchair className='h-5 w-5 text-primary' />
