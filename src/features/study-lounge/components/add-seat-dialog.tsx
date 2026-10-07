@@ -17,6 +17,8 @@ import { useStudyLoungeStore } from '../store/study-lounge-store'
 
 interface AddSeatDialogProps {
   defaultHall?: string
+  defaultFromSerial?: number
+  defaultToSerial?: number
   triggerButton?: React.ReactNode
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -24,6 +26,8 @@ interface AddSeatDialogProps {
 
 export function AddSeatDialog({
   defaultHall,
+  defaultFromSerial,
+  defaultToSerial,
   triggerButton,
   open: externalOpen,
   onOpenChange: setExternalOpen,
@@ -51,8 +55,8 @@ export function AddSeatDialog({
   }, [seats])
 
   const [hallName, setHallName] = useState(defaultHall || existingHalls[0] || 'Black Hall')
-  const [fromSerial, setFromSerial] = useState(1)
-  const [toSerial, setToSerial] = useState(30)
+  const [fromSerial, setFromSerial] = useState(defaultFromSerial || 1)
+  const [toSerial, setToSerial] = useState(defaultToSerial || 30)
 
   // Auto-suggest serial range based on existing desks in the selected hall
   useEffect(() => {
@@ -60,26 +64,31 @@ export function AddSeatDialog({
       const targetHall = defaultHall || hallName || existingHalls[0] || 'Black Hall'
       setHallName(targetHall)
 
-      // Find max serial number already existing in this hall
-      const hallSeats = seats.filter((s) => s.section?.trim().toLowerCase() === targetHall.trim().toLowerCase())
-      let maxNum = 0
-      hallSeats.forEach((s) => {
-        const match = s.seatNumber.match(/(\d+)(?!.*\d)/)
-        if (match) {
-          const num = parseInt(match[1], 10)
-          if (num > maxNum) maxNum = num
-        }
-      })
-
-      if (maxNum > 0) {
-        setFromSerial(maxNum + 1)
-        setToSerial(maxNum + 10)
+      if (defaultFromSerial !== undefined) {
+        setFromSerial(defaultFromSerial)
+        setToSerial(defaultToSerial !== undefined ? defaultToSerial : defaultFromSerial)
       } else {
-        setFromSerial(1)
-        setToSerial(30)
+        // Find max serial number already existing in this hall
+        const hallSeats = seats.filter((s) => s.section?.trim().toLowerCase() === targetHall.trim().toLowerCase())
+        let maxNum = 0
+        hallSeats.forEach((s) => {
+          const match = s.seatNumber.match(/(\d+)(?!.*\d)/)
+          if (match) {
+            const num = parseInt(match[1], 10)
+            if (num > maxNum) maxNum = num
+          }
+        })
+
+        if (maxNum > 0) {
+          setFromSerial(maxNum + 1)
+          setToSerial(maxNum + 10)
+        } else {
+          setFromSerial(1)
+          setToSerial(30)
+        }
       }
     }
-  }, [open, defaultHall])
+  }, [open, defaultHall, defaultFromSerial, defaultToSerial])
 
   // Computed preview list of desks
   const generatedDesks = useMemo(() => {
