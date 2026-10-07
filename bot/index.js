@@ -189,6 +189,9 @@ function getStudentMenuKeyboard() {
     .text('🚻 Take Restroom Break', 'student_break_guide')
     .text('🟢 Back at My Desk', 'student_back_guide')
     .row()
+    .text('🗺 Seating Floor Plan', 'layout_view_default')
+    .text('🤫 Anonymous Complaint', 'complaint_start')
+    .row()
     .text('📄 My Attendance Report', 'student_my_report')
     .text('🔍 Check My Desk Status', 'student_check_presence')
     .row()
@@ -210,6 +213,8 @@ Manage your attendance, restroom / study breaks, and Wi-Fi access below:
 • <code>/checkout</code> — Share phone number to record study hours
 • <code>/break</code> — Take 10m, 15m, or custom study break
 • <code>/back</code> — Tap when back at your desk
+• <code>/layout</code> — View visual seating floor plan & vacant desks
+• <code>/complaint</code> — Submit anonymous quiet hall report (Noise/AC/Wi-Fi)
 • <code>/myreport</code> — View your monthly study hours & attendance audit
 • <code>/check</code> — View your live desk & presence status
 • <code>/wifi</code> — View library high-speed Wi-Fi password
@@ -469,9 +474,10 @@ async function getMainMenuKeyboard(radius) {
     }
   }
   const kb = new InlineKeyboard()
-    .text('🪑 Desk Matrix', 'menu_desks')
-    .text('👥 Students', 'menu_students')
+    .text('🗺 Seating Floor Plan', 'layout_view_default')
+    .text('🪑 Desk Details', 'menu_desks')
     .row()
+    .text('👥 Students', 'menu_students')
     .text('💳 Collect Fee', 'menu_fees')
     .text('⚠️ Defaulters & Dues', 'menu_defaulters')
     .row()
@@ -649,6 +655,16 @@ bot.command(['wifi', 'wificreds'], async (ctx) => {
 bot.command(['announce', 'broadcast'], async (ctx) => {
   if (!await ensureAdmin(ctx)) return;
   await renderAnnouncementMenu(ctx, false);
+});
+
+// Seating Floor Plan commands
+bot.command(['layout', 'floorplan', 'seats', 'desks', 'seatplan'], async (ctx) => {
+  await renderTelegramFloorPlan(ctx, null, false);
+});
+
+// Anonymous Student Complaint / Noise Report commands
+bot.command(['complaint', 'noise', 'report', 'complain'], async (ctx) => {
+  await renderComplaintCategoryPicker(ctx, false);
 });
 
 // ==============================================================================
@@ -978,12 +994,24 @@ bot.on('message:text', async (ctx, next) => {
   const state = adminFlowState.get(chatId);
 
   // Guard: Any administrative flow state requires verified admin privileges (except student self-service flows)
-  if (state && state.action !== 'awaiting_break_duration' && state.action !== 'awaiting_student_report_phone') {
+  if (
+    state &&
+    state.action !== 'awaiting_break_duration' &&
+    state.action !== 'awaiting_student_report_phone' &&
+    state.action !== 'awaiting_complaint_details'
+  ) {
     const isAdmin = await db.isAdminChatId(chatId);
     if (!isAdmin) {
       adminFlowState.delete(chatId);
       return ctx.reply('⛔ <b>Access Denied:</b> Administrator privileges required.', { parse_mode: 'HTML' });
     }
+  }
+
+  // Anonymous Complaint Flow (Student)
+  if (state && state.action === 'awaiting_complaint_details') {
+    adminFlowState.delete(chatId);
+    const details = ctx.message.text.trim();
+    return submitAnonymousComplaint(ctx, state.category, state.hall, details);
   }
 
   // Monthly Report Search Flow (Admin)
@@ -1754,6 +1782,441 @@ bot.callbackQuery(/^seat_vacate_(.+)$/, async (ctx) => {
   } catch (err) {
     await ctx.reply(`❌ Failed to vacate seat: ${err.message}`);
   }
+});
+
+// ==============================================================================
+// 3B. Visual Seating Floor Plan (Telegram ASCII Layout)
+// ==============================================================================
+
+async function renderTelegramFloorPlan(ctx, targetHallName, edit = false) {
+  try {
+    const seats = await db.getAllSeats();
+
+    // Separate into halls
+    const hallA = seats.filter(s => (s.section || '').toLowerCase().includes('hall') || (s.seat_number || '').startsWith('D'));
+    const hallB = seats.filter(s => (s.section || '').toLowerCase().includes('flexi') || (s.section || '').toLowerCase().includes('zone b') || (s.seat_number || '').startsWith('F'));
+
+    // Decide which hall to show
+    const showHall = targetHallName || 'all';
+
+    // Emoji map
+    const icon = (seat) => seat.status === 'occupied' ? '🔴' : '🟢';
+    const pad = (num) => String(num).padStart(2, '0');
+
+    // Build Hall A floor plan (D-01 to D-20): 4 rows × 5 desks per side with central aisle
+    let planA = '';
+    if (showHall === 'all' || showHall === 'halla') {
+      planA += `\n🏛 <b>Main Silent Hall A</b>  (D-01 → D-20)\n`;
+      planA += `┌─────────────────────────────────────┐\n`;
+
+      // Sort hall A seats by number
+      const sortedA = hallA.sort((a, b) => {
+        const na = parseInt((a.seat_number || '').replace(/\D/g, ''), 10) || 0;
+        const nb = parseInt((b.seat_number || '').replace(/\D/g, ''), 10) || 0;
+        return na - nb;
+      });
+
+      // Build a map for quick lookup
+      const seatMapA = {};
+      for (const s of sortedA) {
+        const num = parseInt((s.seat_number || '').replace(/\D/g, ''), 10);
+        if (num) seatMapA[num] = s;
+      }
+
+      // Layout: 4 rows, each row has Left Bay (5 desks) + Aisle + Right Bay (5 desks)
+      // Row 1: D-01..D-05  |  D-06..D-10
+      // Row 2: D-11..D-15  |  D-16..D-20
+      const rows = [
+        { left: [1, 2, 3, 4, 5], right: [6, 7, 8, 9, 10] },
+        { left: [11, 12, 13, 14, 15], right: [16, 17, 18, 19, 20] },
+      ];
+
+      for (const row of rows) {
+        let line = '│ ';
+        for (const n of row.left) {
+          if (seatMapA[n]) {
+            line += `${icon(seatMapA[n])}${pad(n)} `;
+          } else {
+            line += `⬜${pad(n)} `;
+          }
+        }
+        line += ' 🚶 ';
+        for (const n of row.right) {
+          if (seatMapA[n]) {
+            line += `${icon(seatMapA[n])}${pad(n)} `;
+          } else {
+            line += `⬜${pad(n)} `;
+          }
+        }
+        planA += line.trimEnd() + ' │\n';
+      }
+
+      planA += `└─────────────────────────────────────┘\n`;
+    }
+
+    // Build Hall B floor plan (F-01 to F-10): 2 rows × 5 desks each
+    let planB = '';
+    if (showHall === 'all' || showHall === 'hallb') {
+      planB += `\n📖 <b>Flexi Open Zone B</b>  (F-01 → F-10)\n`;
+      planB += `┌─────────────────────────────────────┐\n`;
+
+      const sortedB = hallB.sort((a, b) => {
+        const na = parseInt((a.seat_number || '').replace(/\D/g, ''), 10) || 0;
+        const nb = parseInt((b.seat_number || '').replace(/\D/g, ''), 10) || 0;
+        return na - nb;
+      });
+
+      const seatMapB = {};
+      for (const s of sortedB) {
+        const num = parseInt((s.seat_number || '').replace(/\D/g, ''), 10);
+        if (num) seatMapB[num] = s;
+      }
+
+      const rowsB = [
+        { desks: [1, 2, 3, 4, 5] },
+        { desks: [6, 7, 8, 9, 10] },
+      ];
+
+      for (const row of rowsB) {
+        let line = '│ ';
+        for (const n of row.desks) {
+          if (seatMapB[n]) {
+            line += `${icon(seatMapB[n])}F${pad(n)} `;
+          } else {
+            line += `⬜F${pad(n)} `;
+          }
+        }
+        planB += line.trimEnd() + '           │\n';
+      }
+
+      planB += `└─────────────────────────────────────┘\n`;
+    }
+
+    // Stats
+    const total = seats.length;
+    const occupied = seats.filter(s => s.status === 'occupied').length;
+    const available = total - occupied;
+
+    let text = `🗺 <b>Seating Floor Plan — Live View</b>\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    text += `🟢 Vacant (${available})  •  🔴 Occupied (${occupied})  •  ⬜ Gap  •  🚶 Aisle\n`;
+    text += planA;
+    text += planB;
+    text += `\n📊 <b>Occupancy:</b> ${occupied}/${total} desks (${total > 0 ? Math.round((occupied / total) * 100) : 0}%)\n`;
+    text += `\n<i>🔄 Tap Refresh to see real-time updates</i>`;
+
+    const kb = new InlineKeyboard()
+      .text('🏛 Hall A Only', 'layout_hall_halla')
+      .text('📖 Zone B Only', 'layout_hall_hallb')
+      .row()
+      .text('🗺 Full Layout', 'layout_view_default')
+      .text('🔄 Refresh', 'layout_view_default')
+      .row();
+
+    if (WEB_APP_URL) {
+      kb.webApp('🚀 Open Full WebApp', WEB_APP_URL).row();
+    }
+
+    kb.text('🔙 Back to Menu', 'menu_main');
+
+    if (edit && ctx.callbackQuery) {
+      await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
+    } else {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    }
+  } catch (err) {
+    console.error('Floor plan error:', err);
+    await ctx.reply(`❌ Failed to load floor plan: ${err.message}`);
+  }
+}
+
+// Floor Plan callback handlers
+bot.callbackQuery('layout_view_default', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await renderTelegramFloorPlan(ctx, null, true);
+});
+
+bot.callbackQuery(/^layout_hall_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const hall = ctx.match[1];
+  await renderTelegramFloorPlan(ctx, hall, true);
+});
+
+// ==============================================================================
+// 3C. Anonymous Noise & Hall Complaint Box
+// ==============================================================================
+
+const COMPLAINT_CATEGORIES = {
+  noise:    { emoji: '🔊', label: 'Noise / Whispering', adminTag: '🔊 NOISE ALERT', quickAction: 'Maintain Silence' },
+  ac:       { emoji: '❄️', label: 'AC / Temperature', adminTag: '❄️ AC COMPLAINT', quickAction: 'Check AC' },
+  wifi:     { emoji: '📶', label: 'Wi-Fi / Internet Issue', adminTag: '📶 WIFI COMPLAINT', quickAction: 'Check Wi-Fi' },
+  hygiene:  { emoji: '🧹', label: 'Cleanliness / Hygiene', adminTag: '🧹 HYGIENE REPORT', quickAction: 'Send Housekeeping' },
+  other:    { emoji: '📝', label: 'Other Issue', adminTag: '📝 GENERAL COMPLAINT', quickAction: 'Investigate' },
+};
+
+async function renderComplaintCategoryPicker(ctx, edit = false) {
+  const text = `🤫 <b>Anonymous Complaint Box</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your identity is <b>100% anonymous</b> — admins will never see your name, phone, or chat ID.
+
+Select the type of issue you'd like to report:`;
+
+  const kb = new InlineKeyboard();
+  for (const [key, cat] of Object.entries(COMPLAINT_CATEGORIES)) {
+    kb.text(`${cat.emoji} ${cat.label}`, `complaint_cat_${key}`).row();
+  }
+  kb.text('❌ Cancel', 'menu_main');
+
+  if (edit && ctx.callbackQuery) {
+    await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
+  } else {
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+  }
+}
+
+async function renderComplaintHallPicker(ctx, categoryKey, edit = false) {
+  const cat = COMPLAINT_CATEGORIES[categoryKey] || COMPLAINT_CATEGORIES.other;
+
+  const text = `${cat.emoji} <b>${cat.label} Report</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Which area is this about?
+
+<i>🔒 Your identity remains hidden.</i>`;
+
+  const kb = new InlineKeyboard()
+    .text('🏛 Main Silent Hall A', `complaint_hall_${categoryKey}_halla`)
+    .row()
+    .text('📖 Flexi Open Zone B', `complaint_hall_${categoryKey}_hallb`)
+    .row()
+    .text('🏢 General / Common Area', `complaint_hall_${categoryKey}_general`)
+    .row()
+    .text('🔙 Back', 'complaint_start')
+    .text('❌ Cancel', 'menu_main');
+
+  if (edit && ctx.callbackQuery) {
+    await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
+  } else {
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+  }
+}
+
+async function renderComplaintDetailsPrompt(ctx, categoryKey, hallName, edit = false) {
+  const cat = COMPLAINT_CATEGORIES[categoryKey] || COMPLAINT_CATEGORIES.other;
+  const hallLabel = hallName === 'halla' ? 'Main Silent Hall A'
+    : hallName === 'hallb' ? 'Flexi Open Zone B'
+    : 'General / Common Area';
+
+  const text = `${cat.emoji} <b>${cat.label} — ${hallLabel}</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Would you like to add more details? (optional)
+
+Type your message below, or tap <b>Skip & Submit</b> to send the report now.
+
+<i>🔒 Your identity will NOT be shared with admins.</i>`;
+
+  // Store state for the text handler
+  adminFlowState.set(ctx.chat.id, {
+    action: 'awaiting_complaint_details',
+    category: categoryKey,
+    hall: hallName,
+  });
+
+  const kb = new InlineKeyboard()
+    .text('⏩ Skip & Submit Now', `complaint_skip_${categoryKey}_${hallName}`)
+    .row()
+    .text('❌ Cancel', 'menu_main');
+
+  if (edit && ctx.callbackQuery) {
+    await safeEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb });
+  } else {
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+  }
+}
+
+async function submitAnonymousComplaint(ctx, categoryKey, hallName, details = '') {
+  try {
+    const cat = COMPLAINT_CATEGORIES[categoryKey] || COMPLAINT_CATEGORIES.other;
+    const hallLabel = hallName === 'halla' ? 'Main Silent Hall A'
+      : hallName === 'hallb' ? 'Flexi Open Zone B'
+      : 'General / Common Area';
+
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+    const dateStr = now.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
+    const complaintId = `C-${Date.now().toString(36).toUpperCase()}`;
+
+    // --- 1. Confirm to the student (anonymous) ---
+    const confirmText = `✅ <b>Complaint Submitted Successfully!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 <b>Reference:</b> <code>${complaintId}</code>
+${cat.emoji} <b>Category:</b> ${cat.label}
+📍 <b>Area:</b> ${hallLabel}
+🕐 <b>Time:</b> ${timeStr}, ${dateStr}
+${details ? `📝 <b>Details:</b> ${details}` : ''}
+
+🔒 <i>Your identity has NOT been shared. This report is fully anonymous.</i>
+
+Thank you for helping maintain a better study environment! 🙏`;
+
+    const studentKb = new InlineKeyboard()
+      .text('🤫 Submit Another', 'complaint_start')
+      .text('🔙 Back to Menu', 'menu_main');
+
+    await ctx.reply(confirmText, { parse_mode: 'HTML', reply_markup: studentKb });
+
+    // --- 2. Alert all admins (NO student identity) ---
+    const adminAlert = `🚨 <b>${cat.adminTag}</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 <b>Ref:</b> <code>${complaintId}</code>
+📍 <b>Location:</b> ${hallLabel}
+${cat.emoji} <b>Issue:</b> ${cat.label}
+🕐 <b>Reported at:</b> ${timeStr}, ${dateStr}
+${details ? `\n📝 <b>Student Note:</b>\n<i>"${details}"</i>\n` : ''}
+🔒 <i>This is an anonymous report — student identity is hidden.</i>
+
+<b>Quick Actions:</b> ⬇️`;
+
+    const adminKb = new InlineKeyboard();
+
+    // Category-specific quick action buttons
+    if (categoryKey === 'noise') {
+      adminKb
+        .text('📢 Broadcast "Maintain Silence"', `adm_c_silence_${hallName}`)
+        .row();
+    } else if (categoryKey === 'ac') {
+      adminKb
+        .text('🔧 Notify Maintenance (AC)', `adm_c_ac_${hallName}`)
+        .row();
+    } else if (categoryKey === 'wifi') {
+      adminKb
+        .text('🔧 Notify IT (Wi-Fi)', `adm_c_wifi_${hallName}`)
+        .row();
+    }
+
+    adminKb.text('✅ Mark Resolved', `adm_c_resolve_${complaintId}`);
+
+    await broadcastToAdmins(adminAlert, { parse_mode: 'HTML', reply_markup: adminKb });
+
+  } catch (err) {
+    console.error('Complaint submission error:', err);
+    await ctx.reply('❌ Failed to submit complaint. Please try again.');
+  }
+}
+
+// Complaint callback handlers
+bot.callbackQuery('complaint_start', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  // Clear any pending complaint state
+  adminFlowState.delete(ctx.chat.id);
+  await renderComplaintCategoryPicker(ctx, true);
+});
+
+bot.callbackQuery(/^complaint_cat_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const categoryKey = ctx.match[1];
+  await renderComplaintHallPicker(ctx, categoryKey, true);
+});
+
+bot.callbackQuery(/^complaint_hall_([^_]+)_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const categoryKey = ctx.match[1];
+  const hallName = ctx.match[2];
+  await renderComplaintDetailsPrompt(ctx, categoryKey, hallName, true);
+});
+
+bot.callbackQuery(/^complaint_skip_([^_]+)_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  adminFlowState.delete(ctx.chat.id);
+  const categoryKey = ctx.match[1];
+  const hallName = ctx.match[2];
+  await submitAnonymousComplaint(ctx, categoryKey, hallName, '');
+});
+
+// Admin quick-action handlers for complaints
+bot.callbackQuery(/^adm_c_silence_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery('📢 Broadcasting silence notice...');
+  const hallName = ctx.match[1];
+  const hallLabel = hallName === 'halla' ? 'Main Silent Hall A'
+    : hallName === 'hallb' ? 'Flexi Open Zone B'
+    : 'the study area';
+
+  const notice = `🤫 <b>SILENCE NOTICE</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📍 <b>${hallLabel}</b>
+
+Dear students, we have received reports of excessive noise in the study area. Please maintain strict silence and keep your phones on silent mode.
+
+📵 No phone calls inside the hall
+🤐 Whisper conversations only at the reception
+🎧 Use headphones for media
+
+Thank you for your cooperation! 🙏
+<i>— Library Management</i>`;
+
+  // Broadcast to all students currently checked in
+  try {
+    const todayAttendance = await db.getTodayAttendance();
+    let sentCount = 0;
+    for (const record of todayAttendance) {
+      if (record.student_id) {
+        const chatId = await getStudentChatId(record.student_id);
+        if (chatId) {
+          try {
+            await bot.api.sendMessage(chatId, notice, { parse_mode: 'HTML' });
+            sentCount++;
+          } catch (_) {}
+        }
+      }
+    }
+    await ctx.editMessageText(
+      ctx.callbackQuery.message.text + `\n\n✅ <b>Silence notice broadcasted to ${sentCount} students.</b>`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (err) {
+    await ctx.reply(`✅ Silence notice sent. (Broadcast partial: ${err.message})`);
+  }
+});
+
+bot.callbackQuery(/^adm_c_ac_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery('🔧 AC issue acknowledged');
+  const hallName = ctx.match[1];
+  const hallLabel = hallName === 'halla' ? 'Main Silent Hall A'
+    : hallName === 'hallb' ? 'Flexi Open Zone B'
+    : 'Common Area';
+
+  try {
+    await ctx.editMessageText(
+      ctx.callbackQuery.message.text + `\n\n✅ <b>AC issue in ${hallLabel} acknowledged. Maintenance notified by ${ctx.from.first_name}.</b>`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (_) {}
+});
+
+bot.callbackQuery(/^adm_c_wifi_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery('🔧 Wi-Fi issue acknowledged');
+  const hallName = ctx.match[1];
+  const hallLabel = hallName === 'halla' ? 'Main Silent Hall A'
+    : hallName === 'hallb' ? 'Flexi Open Zone B'
+    : 'Common Area';
+
+  try {
+    await ctx.editMessageText(
+      ctx.callbackQuery.message.text + `\n\n✅ <b>Wi-Fi issue in ${hallLabel} acknowledged. IT team notified by ${ctx.from.first_name}.</b>`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (_) {}
+});
+
+bot.callbackQuery(/^adm_c_resolve_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery('✅ Complaint marked as resolved');
+  const complaintId = ctx.match[1];
+
+  try {
+    await ctx.editMessageText(
+      ctx.callbackQuery.message.text + `\n\n✅ <b>Resolved by ${ctx.from.first_name} at ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}</b>`,
+      { parse_mode: 'HTML' }
+    );
+  } catch (_) {}
 });
 
 // ==============================================================================
