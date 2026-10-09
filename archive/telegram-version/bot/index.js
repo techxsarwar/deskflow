@@ -17,8 +17,6 @@ const {
 const {
   sendPhoneToken,
   verifyPhoneToken,
-  sendEmailToken,
-  verifyEmailToken,
   sendTelegramOtp,
   verifyTelegramOtp,
   verifyAdminSessionToken,
@@ -4463,43 +4461,6 @@ app.use(
 );
 app.use(express.json());
 
-// 0. Primary Web Auth: Dispatch 6-Digit Verification Code to verified Admin Email via Resend
-app.post('/api/auth/send-email-otp', authLimiter, async (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Administrator email is required' });
-  }
-
-  try {
-    const result = await sendEmailToken(email);
-    return res.json({
-      success: true,
-      message: 'Verification code sent to your email inbox',
-      ...result,
-    });
-  } catch (error) {
-    console.error('[Email Auth Error] send-email-otp failed:', error.message);
-    const isDenied = error.message.includes('Access Denied');
-    return res.status(isDenied ? 403 : 400).json({ error: error.message });
-  }
-});
-
-// Primary Web Auth: Verify 6-Digit Email Code
-app.post('/api/auth/verify-email-otp', verifyLimiter, async (req, res) => {
-  const { email, code } = req.body;
-  if (!email || !code) {
-    return res.status(400).json({ error: 'Email and verification code are required' });
-  }
-
-  try {
-    const result = await verifyEmailToken(email, code);
-    return res.json(result);
-  } catch (error) {
-    console.error('[Email Auth Error] verify-email-otp failed:', error.message);
-    return res.status(401).json({ error: error.message });
-  }
-});
-
 // 1. Primary Auth: Dispatch 4-Character Token to verified Admin Telegram (rate-limited)
 app.post('/api/auth/send-token', authLimiter, async (req, res) => {
   const { phone } = req.body;
@@ -4594,7 +4555,7 @@ app.post('/api/auth/verify-2fa', verifyLimiter, async (req, res) => {
 });
 
 // Email Receipt Endpoint (rate-limited, requires valid admin session token)
-const handleEmailReceipt = async (req, res) => {
+app.post('/api/email/receipt', emailLimiter, async (req, res) => {
   const authHeader = req.headers['x-admin-token'] || req.headers['authorization'];
   const internalProxy = req.headers['x-internal-proxy'];
   const token = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
@@ -4604,14 +4565,10 @@ const handleEmailReceipt = async (req, res) => {
     return res.status(401).json({ error: 'Authentication required. Valid admin token missing or expired.' });
   }
 
-  const { studentId, transactionId, email } = req.body;
+  const { studentId, transactionId } = req.body;
   try {
     const student = await db.getStudentById(studentId);
     if (!student) return res.status(404).json({ error: 'Student not found' });
-
-    if (email && email.includes('@')) {
-      student.email = email.trim();
-    }
 
     let transaction = null;
     if (transactionId) {
@@ -4626,10 +4583,7 @@ const handleEmailReceipt = async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
-};
-
-app.post('/api/email/receipt', emailLimiter, handleEmailReceipt);
-app.post('/api/fees/email-receipt', emailLimiter, handleEmailReceipt);
+});
 
 // Email Reminder Endpoint (rate-limited, requires valid admin session token)
 app.post('/api/email/reminder', emailLimiter, async (req, res) => {

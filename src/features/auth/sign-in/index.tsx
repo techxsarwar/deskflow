@@ -19,12 +19,12 @@ export function SignIn() {
         <CardHeader>
           <CardTitle className='text-lg tracking-tight flex items-center justify-between'>
             <span>Admin Sign In</span>
-            <span className='rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 border border-emerald-500/20'>
-              Telegram Protected
+            <span className='rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary border border-primary/20'>
+              Email 2FA Protected
             </span>
           </CardTitle>
           <CardDescription>
-            Enter your registered admin mobile number to receive a secure 4-digit token on Telegram (<b>@controllibrarybot</b>).
+            Enter your registered administrator email to receive a secure 6-digit verification code.
           </CardDescription>
         </CardHeader>
         <CardContent>

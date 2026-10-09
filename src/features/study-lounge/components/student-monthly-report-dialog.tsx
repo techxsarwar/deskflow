@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import {
   FileText,
   Download,
-  Send,
   Mail,
   Loader2,
   Calendar,
@@ -15,9 +14,8 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Dialog,
@@ -64,11 +62,9 @@ export function StudentMonthlyReportDialog({
   const now = new Date()
   const [selectedYear, setSelectedYear] = useState<string>(String(now.getFullYear()))
   const [selectedMonth, setSelectedMonth] = useState<string>(String(now.getMonth() + 1))
-  const [sendToTelegram, setSendToTelegram] = useState(true)
-  const [customChannelId, setCustomChannelId] = useState('')
+  const [customEmail, setCustomEmail] = useState('')
 
   const [isLoading, setIsLoading] = useState(false)
-  const [isSendingTelegram, setIsSendingTelegram] = useState(false)
   const [isSendingEmail, setIsSendingEmail] = useState(false)
   const [reportData, setReportData] = useState<any>(null)
   const [pdfBase64, setPdfBase64] = useState<string | null>(null)
@@ -182,49 +178,22 @@ export function StudentMonthlyReportDialog({
     }
   }
 
-  // Handle dispatch to private Telegram channel
-  const handleSendTelegram = async () => {
-    setIsSendingTelegram(true)
-    try {
-      const res = await studyLoungeApi.generateMonthlyReport({
-        studentId: student.id,
-        year: parseInt(selectedYear, 10),
-        month: parseInt(selectedMonth, 10),
-        sendToTelegram: true,
-        targetChatId: customChannelId.trim() || undefined,
-      })
-
-      if (res.telegramSent) {
-        toast.success('🚀 Stored in Private Telegram Channel!', {
-          description: `Audit PDF delivered to Telegram (Chat ID: ${res.telegramResult?.chatId || 'Configured Channel'}).`,
-        })
-      } else {
-        toast.warning('PDF Generated', {
-          description: res.telegramResult?.error || 'Telegram channel ID was not configured or bot lacks admin permissions.',
-        })
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Telegram upload failed'
-      toast.error('Upload Error', { description: msg })
-    } finally {
-      setIsSendingTelegram(false)
-    }
-  }
-
   // Handle direct branded HTML email dispatch via Resend
   const handleSendEmail = async () => {
     setIsSendingEmail(true)
+    const targetEmail = customEmail.trim() || student.email || undefined
+
     try {
       const res = await studyLoungeApi.emailMonthlyReport({
         studentId: student.id,
         year: parseInt(selectedYear, 10),
         month: parseInt(selectedMonth, 10),
-        email: student.email || undefined,
+        email: targetEmail,
       })
 
       if (res.success) {
         toast.success('📧 PDF Report Sent to Student!', {
-          description: `Dispatched to ${res.recipient || student.email || 'student email'}.`,
+          description: `Dispatched to ${res.recipient || targetEmail || 'student email'}.`,
         })
       } else {
         toast.warning('Email Notice', {
@@ -252,7 +221,7 @@ export function StudentMonthlyReportDialog({
               </DialogTitle>
             </div>
             <DialogDescription className='text-xs text-muted-foreground'>
-              Official second-by-second study duration audit and private Telegram channel archiver.
+              Official study duration audit and monthly attendance performance report.
             </DialogDescription>
           </div>
 
@@ -315,26 +284,15 @@ export function StudentMonthlyReportDialog({
             </div>
           </div>
 
-          <div className='flex items-center gap-3'>
-            <div className='flex items-center gap-2'>
-              <Switch
-                id='tg-store-toggle'
-                checked={sendToTelegram}
-                onCheckedChange={setSendToTelegram}
-              />
-              <Label htmlFor='tg-store-toggle' className='text-xs cursor-pointer select-none font-medium'>
-                Private Telegram Archive
-              </Label>
-            </div>
-
-            {sendToTelegram && (
-              <Input
-                placeholder='Channel ID (optional override)'
-                value={customChannelId}
-                onChange={(e) => setCustomChannelId(e.target.value)}
-                className='h-8 w-44 text-xs font-mono'
-              />
-            )}
+          <div className='flex items-center gap-2'>
+            <Mail className='h-3.5 w-3.5 text-muted-foreground shrink-0' />
+            <Input
+              placeholder={student.email || 'Recipient email (optional override)'}
+              value={customEmail}
+              onChange={(e) => setCustomEmail(e.target.value)}
+              className='h-8 w-56 text-xs'
+              title='Override or specify email address to receive report'
+            />
           </div>
         </div>
 
@@ -551,41 +509,20 @@ export function StudentMonthlyReportDialog({
 
             <Button
               type='button'
-              variant='outline'
               size='sm'
-              className='gap-1.5 h-8 text-xs'
+              className='gap-1.5 bg-primary font-semibold h-8 text-xs'
               disabled={isLoading || isSendingEmail || !reportData}
               onClick={handleSendEmail}
             >
               {isSendingEmail ? (
                 <>
                   <Loader2 className='h-3.5 w-3.5 animate-spin' />
-                  <span>Sending...</span>
+                  <span>Dispatching Email...</span>
                 </>
               ) : (
                 <>
                   <Mail className='h-3.5 w-3.5' />
-                  <span><span className='hidden sm:inline'>Email </span>to Student</span>
-                </>
-              )}
-            </Button>
-
-            <Button
-              type='button'
-              size='sm'
-              className='gap-1.5 bg-primary font-semibold h-8 text-xs'
-              disabled={isLoading || isSendingTelegram || !reportData}
-              onClick={handleSendTelegram}
-            >
-              {isSendingTelegram ? (
-                <>
-                  <Loader2 className='h-3.5 w-3.5 animate-spin' />
-                  <span>Uploading...</span>
-                </>
-              ) : (
-                <>
-                  <Send className='h-3.5 w-3.5' />
-                  <span><span className='hidden sm:inline'>Send to </span>Telegram<span className='hidden md:inline'> Channel</span></span>
+                  <span>Email Report to Student</span>
                 </>
               )}
             </Button>

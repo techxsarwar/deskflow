@@ -1122,86 +1122,6 @@ async function sendMonthlyReportEmail({ student, reportData, pdfBuffer, customRe
   }
 }
 
-function getLoginOtpHtml({ code, adminName = 'Administrator', expiresMinutes = 5 }) {
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>DeskFlow Admin Verification Code</title>
-</head>
-<body style="margin:0;padding:32px 16px;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 4px 20px -2px rgba(15,23,42,0.06);overflow:hidden;">
-    <tr>
-      <td style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%);padding:28px 32px;color:#ffffff;text-align:center;">
-        <h1 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.5px;">DeskFlow Portal</h1>
-        <p style="margin:6px 0 0 0;font-size:12px;color:#94a3b8;">Administrator Authentication</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:32px 32px 24px 32px;text-align:center;">
-        <p style="margin:0 0 16px 0;font-size:14px;color:#334155;">Hello <b>${adminName}</b>,</p>
-        <p style="margin:0 0 24px 0;font-size:13px;color:#64748b;">Use the 6-digit verification code below to sign in to your DeskFlow dashboard:</p>
-        <div style="background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:12px;padding:16px 24px;margin:0 auto 24px auto;display:inline-block;letter-spacing:6px;font-size:28px;font-weight:800;color:#0f172a;font-family:monospace;">
-          ${code}
-        </div>
-        <p style="margin:0;font-size:12px;color:#94a3b8;">This code is valid for <b>${expiresMinutes} minutes</b>. Never share this code with anyone.</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center;font-size:11px;color:#94a3b8;">
-        &copy; ${new Date().getFullYear()} DeskFlow Operating System &bull; Automated Security Service
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `;
-}
-
-async function sendLoginOtpEmail({ email, code, adminName = 'Administrator' }) {
-  const fromEmail = process.env.RESEND_FROM_EMAIL || 'DeskFlow Security <receipts@globalpulse24.in>';
-  const html = getLoginOtpHtml({ code, adminName });
-
-  if (!process.env.RESEND_API_KEY || !resend) {
-    console.log(`[MOCK EMAIL OTP] Sent code ${code} to ${email}`);
-    return { success: true, mock: true, recipient: email };
-  }
-
-  try {
-    const res = await resend.emails.send({
-      from: fromEmail,
-      to: [email],
-      subject: `🔐 Your DeskFlow Admin Verification Code: ${code}`,
-      html,
-    });
-
-    if (res.error) {
-      if (
-        res.error.statusCode === 403 ||
-        res.error.message?.includes('testing emails') ||
-        res.error.message?.includes('only send testing emails')
-      ) {
-        console.warn(`Resend testing mode: Forwarding OTP to fallback (${ADMIN_FALLBACK_EMAIL})`);
-        if (ADMIN_FALLBACK_EMAIL) {
-          await resend.emails.send({
-            from: fromEmail,
-            to: [ADMIN_FALLBACK_EMAIL],
-            subject: `[Admin OTP for ${email}] ${code} - DeskFlow`,
-            html,
-          });
-          return { success: true, sandbox: true, recipient: ADMIN_FALLBACK_EMAIL };
-        }
-      }
-      throw new Error(res.error.message);
-    }
-    return { success: true, recipient: email };
-  } catch (err) {
-    console.error('Failed to send OTP email:', err);
-    throw err;
-  }
-}
-
 module.exports = {
   sendReceiptEmail,
   sendReminderEmail,
@@ -1209,8 +1129,6 @@ module.exports = {
   broadcastWifiCredentials,
   broadcastAnnouncement,
   sendMonthlyReportEmail,
-  sendLoginOtpEmail,
-  getLoginOtpHtml,
   getMonthlyReportHtml,
   getReceiptHtml,
   getReminderHtml,

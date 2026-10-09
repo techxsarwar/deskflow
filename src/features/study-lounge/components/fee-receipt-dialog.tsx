@@ -18,7 +18,10 @@ import {
   Sparkles,
   MessageSquare,
   FileText,
+  Mail,
+  Loader2,
 } from 'lucide-react'
+import { studyLoungeApi } from '../lib/api'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -163,6 +166,44 @@ export function FeeReceiptDialog({
     toast.success('Snippet added to message!')
   }
 
+  // Email Receipt via Resend
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
+  const handleEmailReceipt = async () => {
+    const targetEmail = email.trim() || student?.email
+    if (!targetEmail) {
+      const inputEmail = window.prompt('Enter recipient email address to send receipt:')
+      if (!inputEmail || !inputEmail.includes('@')) return
+      await sendEmailWithAddress(inputEmail.trim())
+      return
+    }
+    await sendEmailWithAddress(targetEmail)
+  }
+
+  const sendEmailWithAddress = async (emailAddr: string) => {
+    setIsSendingEmail(true)
+    try {
+      const res = await studyLoungeApi.emailReceipt({
+        studentId: student?.id || '',
+        transactionId: transaction.id,
+        email: emailAddr,
+      })
+      if (res.success) {
+        toast.success('📧 Receipt Emailed Successfully!', {
+          description: `Dispatched to ${res.recipient || emailAddr} (Receipt #${transaction.receiptNumber}).`,
+        })
+      } else {
+        toast.warning('Email Notice', {
+          description: res.message || 'Could not send receipt email.',
+        })
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send receipt email'
+      toast.error('Email Dispatch Failed', { description: msg })
+    } finally {
+      setIsSendingEmail(false)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='max-h-[94vh] overflow-y-auto sm:max-w-3xl p-0 print:p-0 print:max-h-none print:overflow-visible print:border-none print:shadow-none'>
@@ -182,6 +223,23 @@ export function FeeReceiptDialog({
           </div>
 
           <div className='flex items-center gap-2 w-full sm:w-auto'>
+            {/* Direct Email Receipt Button via Resend */}
+            <Button
+              size='sm'
+              variant='outline'
+              onClick={handleEmailReceipt}
+              disabled={isSendingEmail}
+              className='gap-1.5 flex-1 sm:flex-initial text-xs sm:text-sm'
+              title={`Email receipt to ${email || 'student'}`}
+            >
+              {isSendingEmail ? (
+                <Loader2 className='h-3.5 w-3.5 animate-spin' />
+              ) : (
+                <Mail className='h-3.5 w-3.5' />
+              )}
+              <span><span className='hidden sm:inline'>Email </span>Receipt</span>
+            </Button>
+
             {/* Direct WhatsApp Forward Button with Edited Text */}
             <Button
               size='sm'

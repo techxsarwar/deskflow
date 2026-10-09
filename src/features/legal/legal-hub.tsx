@@ -341,7 +341,7 @@ export function LegalHub({ defaultTab = 'terms' }: LegalHubProps) {
                     <div className='p-3 rounded-lg bg-background/80 border space-y-1'>
                       <span className='font-semibold text-foreground block'>🎯 Point-in-Time Verification</span>
                       <span className='text-muted-foreground'>
-                        GPS coordinates are collected <b>ONLY at the exact moment</b> you initiate Check-In or Check-Out via Telegram or Web.
+                        GPS coordinates are collected <b>ONLY at the exact moment</b> you initiate Check-In or Check-Out via the Web Portal.
                       </span>
                     </div>
                     <div className='p-3 rounded-lg bg-background/80 border space-y-1'>
@@ -381,7 +381,7 @@ export function LegalHub({ defaultTab = 'terms' }: LegalHubProps) {
                     By submitting parent contact details during registration, the student and parent explicitly authorize the library to:
                   </p>
                   <ul className='list-disc pl-5 space-y-1 text-muted-foreground'>
-                    <li>Send fee transaction receipts and due payment reminders via WhatsApp, SMS, or Telegram.</li>
+                    <li>Send fee transaction receipts and due payment reminders via Email, WhatsApp, or SMS.</li>
                     <li>Contact parents immediately in case of medical emergencies, unexpected library closures, or disciplinary issues.</li>
                     <li>Alert parents if the student triggers unauthorized remote check-in alerts while absent from the study hall.</li>
                   </ul>
@@ -584,7 +584,7 @@ export function LegalHub({ defaultTab = 'terms' }: LegalHubProps) {
                   </h3>
                   <p className='text-muted-foreground'>
                     As an adult study lounge, students are free to take tea/lunch breaks, step out for fresh air, or conclude their study
-                    sessions at their own discretion. While our digital turnstiles and Telegram check-in log attendance times, the
+                    sessions at their own discretion. While our digital turnstiles and attendance logs track presence, the
                     facility does not operate as an enclosed prison or custodial lockup. Parents seeking strict exit supervision must
                     monitor their student’s attendance logs in coordination with their registered shifts.
                   </p>

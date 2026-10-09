@@ -172,6 +172,51 @@ export const studyLoungeApi = {
     const res = await api.post('/api/reports/email-student', params)
     return res.data
   },
+
+  // Email Fee Receipt directly via Resend
+  emailReceipt: async (params: {
+    studentId: string
+    transactionId?: string
+    email?: string
+  }): Promise<{
+    success: boolean
+    message?: string
+    receiptNo?: string
+    recipient?: string
+  }> => {
+    const res = await api.post('/api/fees/email-receipt', params)
+    return res.data
+  },
+
+  // Admin Email OTP Authentication
+  sendEmailOtp: async (email: string): Promise<{
+    success: boolean
+    message: string
+    email: string
+    maskedEmail: string
+    adminName: string
+  }> => {
+    const res = await api.post('/api/auth/send-email-otp', { email })
+    return res.data
+  },
+
+  verifyEmailOtp: async (
+    email: string,
+    code: string
+  ): Promise<{
+    success: boolean
+    verified: boolean
+    token: string
+    user: {
+      accountNo: string
+      name: string
+      email: string
+      role: string
+    }
+  }> => {
+    const res = await api.post('/api/auth/verify-email-otp', { email, code })
+    return res.data
+  },
 }
 
 
