@@ -1,6 +1,7 @@
+const path = require('path');
 const { Client } = require('pg');
-require('dotenv').config({ path: 'd:\\shadcn-admin\\.env' });
-require('dotenv').config({ path: 'd:\\shadcn-admin\\bot\\.env' });
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const connectionString = process.env.DATABASE_URL;
 
